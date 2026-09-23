@@ -71,4 +71,53 @@ impl KeyInput {
             }
         })
     }
+
+    /// For a non-alphabetic character key (a digit or punctuation symbol),
+    /// returns a `KeyMapKey` built from the character actually produced by
+    /// the user's keyboard layout (`logical`), rather than the unshifted
+    /// base character (`key_without_modifiers`) that `keymap_key` uses.
+    ///
+    /// This makes bindings like `/` or `^` match on any layout: on a layout
+    /// where producing that character requires Shift (e.g. `/` via Shift+7
+    /// on an Italian keyboard), `logical` already reflects the real
+    /// character while `key_without_modifiers` would not.
+    ///
+    /// Returns `None` for anything this doesn't apply to (named keys,
+    /// alphabetic keys, numpad keys, or a `logical` value that isn't a
+    /// single ASCII character) - callers should fall back to `keymap_key`
+    /// in that case.
+    pub fn logical_symbol_key(&self) -> Option<KeyMapKey> {
+        let KeyInput::Keyboard {
+            key_without_modifiers,
+            logical,
+            location,
+            ..
+        } = self
+        else {
+            return None;
+        };
+
+        if matches!(location, KeyLocation::Numpad) {
+            return None;
+        }
+
+        let Key::Character(base) = key_without_modifiers else {
+            return None;
+        };
+        if !(base.len() == 1 && base.is_ascii()) {
+            return None;
+        }
+        if base.chars().next().unwrap().is_ascii_alphabetic() {
+            return None;
+        }
+
+        let Key::Character(actual) = logical else {
+            return None;
+        };
+        if !(actual.len() == 1 && actual.is_ascii()) {
+            return None;
+        }
+
+        Some(KeyMapKey::Logical(Key::Character(actual.to_lowercase().into())))
+    }
 }
