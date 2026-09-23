@@ -72,18 +72,25 @@ impl KeyInput {
         })
     }
 
-    /// For a non-alphabetic character key (a digit or punctuation symbol),
+    /// For a key whose logical case doesn't need explicit-Shift letter
+    /// handling (i.e. anything other than a plain alphabetic character key),
     /// returns a `KeyMapKey` built from the character actually produced by
     /// the user's keyboard layout (`logical`), rather than the unshifted
     /// base character (`key_without_modifiers`) that `keymap_key` uses.
     ///
-    /// This makes bindings like `/` or `^` match on any layout: on a layout
-    /// where producing that character requires Shift (e.g. `/` via Shift+7
-    /// on an Italian keyboard), `logical` already reflects the real
-    /// character while `key_without_modifiers` would not.
+    /// This makes bindings like `/` or `^` match on any layout:
+    /// - On a layout where producing the character requires Shift (e.g. `/`
+    ///   via Shift+7 on an Italian keyboard), `logical` already reflects
+    ///   the real character while `key_without_modifiers` would not.
+    /// - On a layout where the character is the composed result of a dead
+    ///   key (e.g. `^` via a dead-key press followed by Space on an Italian
+    ///   keyboard), `key_without_modifiers` for that second keypress
+    ///   describes the plain key that was pressed (e.g. Space), which is
+    ///   unrelated to the composed output - only `logical` has the real
+    ///   character.
     ///
-    /// Returns `None` for anything this doesn't apply to (named keys,
-    /// alphabetic keys, numpad keys, or a `logical` value that isn't a
+    /// Returns `None` for anything this doesn't apply to (alphabetic
+    /// character keys, numpad keys, or a `logical` value that isn't a
     /// single ASCII character) - callers should fall back to `keymap_key`
     /// in that case.
     pub fn logical_symbol_key(&self) -> Option<KeyMapKey> {
@@ -101,14 +108,17 @@ impl KeyInput {
             return None;
         }
 
-        let Key::Character(base) = key_without_modifiers else {
-            return None;
-        };
-        if !(base.len() == 1 && base.is_ascii()) {
-            return None;
-        }
-        if base.chars().next().unwrap().is_ascii_alphabetic() {
-            return None;
+        // Letters keep using key_without_modifiers + an explicit shift bit
+        // (handled by keymap_key), since that convention is already
+        // layout-portable for Latin-alphabet layouts and this fix doesn't
+        // need to touch it.
+        if let Key::Character(base) = key_without_modifiers {
+            if base.len() == 1
+                && base.is_ascii()
+                && base.chars().next().unwrap().is_ascii_alphabetic()
+            {
+                return None;
+            }
         }
 
         let Key::Character(actual) = logical else {

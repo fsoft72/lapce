@@ -42,7 +42,7 @@ impl KeyPress {
 
 #[cfg(test)]
 mod tests {
-    use floem::keyboard::{Key, KeyCode, KeyLocation, PhysicalKey};
+    use floem::keyboard::{Key, KeyCode, KeyLocation, NamedKey, PhysicalKey};
 
     use super::*;
     use crate::keypress::keymap::KeyMapKey;
@@ -108,6 +108,29 @@ mod tests {
         let matched = press.keymap_press().unwrap();
         assert_eq!(matched.key, KeyMapKey::Logical(Key::Character("/".into())));
         assert_eq!(matched.mods, Modifiers::CONTROL);
+    }
+
+    #[test]
+    fn dead_key_composed_symbol_matches_via_actual_character() {
+        // Italian layout: "^" is a dead key. Pressing it then Space
+        // produces the standalone "^" character; the event for that
+        // second keypress has key_without_modifiers = Space (the physical
+        // key that was pressed), which is unrelated to the composed
+        // output - only `logical` carries the real character.
+        let press = KeyPress {
+            key: KeyInput::Keyboard {
+                physical: PhysicalKey::Code(KeyCode::Space),
+                logical: Key::Character("^".into()),
+                location: KeyLocation::Standard,
+                key_without_modifiers: Key::Named(NamedKey::Space),
+                repeat: false,
+            },
+            mods: Modifiers::empty(),
+        };
+
+        let matched = press.keymap_press().unwrap();
+        assert_eq!(matched.key, KeyMapKey::Logical(Key::Character("^".into())));
+        assert!(matched.mods.is_empty());
     }
 
     #[test]
