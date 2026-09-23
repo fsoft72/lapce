@@ -199,7 +199,7 @@ mode = "n"
 
 [[keymaps]]
 key = "/"
-command = "palette.line"
+command = "search"
 mode = "n"
 
 [[keymaps]]

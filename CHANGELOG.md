@@ -4,6 +4,8 @@
 
 ### Features/Changes
 
+- In modal (Vim) mode, bind `/` to open the search bar (was previously bound to go-to-line)
+
 ### Bug Fixes
 
 ## 0.4.6
