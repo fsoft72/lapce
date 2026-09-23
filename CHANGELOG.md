@@ -5,6 +5,7 @@
 ### Features/Changes
 
 - In modal (Vim) mode, bind `/` to open the search bar (was previously bound to go-to-line)
+- Fix vim-mode symbol keybindings (`/`, `^`, `$`, `%`, `*`, `<`, `>`, `:`) and `ctrl+/` (toggle line comment) not matching on keyboard layouts where those symbols require Shift/AltGr on a different key than on US QWERTY (e.g. Italian keyboards)
 
 ### Bug Fixes
 
