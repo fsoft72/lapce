@@ -551,6 +551,7 @@ fn panel_picker(
         |p| *p,
         move |p| {
             let window_tab_data = window_tab_data.clone();
+            let file_diffs = window_tab_data.source_control.file_diffs;
             let tooltip = match p {
                 PanelKind::Terminal => "Terminal",
                 PanelKind::FileExplorer => "File Explorer",
@@ -633,6 +634,30 @@ fn panel_picker(
                                 .get()
                                 .color(LapceColor::LAPCE_TAB_ACTIVE_UNDERLINE),
                         )
+                }),
+                container(
+                    label(move || {
+                        file_diffs.with(|diffs| diffs.len().to_string())
+                    })
+                    .style(move |s| {
+                        let config = config.get();
+                        s.font_size(9.0)
+                            .padding_horiz(3.0)
+                            .color(config.color(LapceColor::EDITOR_BACKGROUND))
+                            .border_radius(100.0)
+                            .background(config.color(LapceColor::EDITOR_CARET))
+                    }),
+                )
+                .style(move |s| {
+                    let show = p == PanelKind::SourceControl
+                        && !file_diffs.with(|diffs| diffs.is_empty());
+                    s.selectable(false)
+                        .pointer_events_none()
+                        .absolute()
+                        .size_pct(100.0, 100.0)
+                        .justify_end()
+                        .items_start()
+                        .apply_if(!show, |s| s.hide())
                 }),
             )))
             .style(|s| s.padding(6.0))
