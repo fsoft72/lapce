@@ -272,6 +272,12 @@ impl AppData {
                 if self.app_terminated.get_untracked() {
                     return;
                 }
+                if let Some(window_data) = self
+                    .windows
+                    .with_untracked(|windows| windows.get(&window_id).cloned())
+                {
+                    window_data.stop_agents();
+                }
                 let db: Arc<LapceDb> = use_context().unwrap();
                 if self.windows.with_untracked(|w| w.len()) == 1 {
                     if let Err(err) = db.insert_app(self.clone()) {
@@ -4028,6 +4034,11 @@ pub fn launch() {
     app.on_event(move |event| match event {
         floem::AppEvent::WillTerminate => {
             app_data.app_terminated.set(true);
+            app_data.windows.with_untracked(|windows| {
+                for window_data in windows.values() {
+                    window_data.stop_agents();
+                }
+            });
             if let Err(err) = db.insert_app(app_data.clone()) {
                 tracing::error!("{:?}", err);
             }

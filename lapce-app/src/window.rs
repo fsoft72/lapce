@@ -84,6 +84,16 @@ pub struct WindowData {
 }
 
 impl WindowData {
+    /// Stops the agent of every workspace tab in this window, waiting briefly
+    /// for each proxy to confirm, so no agent process outlives the window.
+    pub fn stop_agents(&self) {
+        self.window_tabs.with_untracked(|window_tabs| {
+            for (_, window_tab) in window_tabs.iter() {
+                window_tab.agent.stop_before_exit();
+            }
+        });
+    }
+
     pub fn new(
         window_id: WindowId,
         app_view_id: RwSignal<ViewId>,

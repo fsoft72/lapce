@@ -5,6 +5,7 @@ use std::{
     hash::{Hash, Hasher},
     path::Path,
     rc::Rc,
+    time::Duration,
 };
 
 use floem::{
@@ -27,6 +28,10 @@ use crate::{
     main_split::MainSplitData,
     window_tab::CommonData,
 };
+
+/// How long closing a window or the app waits for a proxy to confirm that
+/// its agent process was killed.
+const AGENT_STOP_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// One entry in the chat transcript.
 #[derive(Debug, Clone, PartialEq)]
@@ -322,6 +327,22 @@ impl AgentData {
         }
         self.state.update(|state| state.push_user(&text));
         self.common.proxy.agent_prompt(text, self.active_context());
+    }
+
+    /// Stops the agent before its window or the app closes, blocking up to
+    /// [`AGENT_STOP_TIMEOUT`] until the proxy confirms the process was
+    /// killed: without the wait the app could exit first and orphan it.
+    /// Does nothing when no agent is running.
+    pub fn stop_before_exit(&self) {
+        let running = self.state.with_untracked(|state| {
+            !matches!(state.status, AgentStatus::Disconnected { .. })
+        });
+        if !running {
+            return;
+        }
+        if !self.common.proxy.agent_stop(AGENT_STOP_TIMEOUT) {
+            tracing::warn!("the proxy did not confirm that the agent was stopped");
+        }
     }
 
     /// Cancels the running turn.

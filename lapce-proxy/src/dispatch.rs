@@ -182,9 +182,6 @@ impl ProxyHandler for Dispatcher {
             } => {
                 self.agent.permission_reply(request_id, option_id);
             }
-            AgentStop {} => {
-                self.agent.stop();
-            }
             Update { path, delta, rev } => {
                 let buffer = self.buffers.get_mut(&path).unwrap();
                 let old_text = buffer.rope.clone();
@@ -463,6 +460,10 @@ impl ProxyHandler for Dispatcher {
                     message: format!("{err:#}"),
                 });
                 self.respond_rpc(id, result);
+            }
+            AgentStop {} => {
+                self.agent.stop();
+                self.respond_rpc(id, Ok(ProxyResponse::Success {}));
             }
             BufferHead { path } => {
                 let result = if let Some(workspace) = self.workspace.as_ref() {

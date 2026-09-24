@@ -1,9 +1,9 @@
 //! One ACP client session: spawns the agent, serves its requests, runs prompts.
 
-use std::{collections::VecDeque, path::PathBuf, sync::Arc};
+use std::{collections::VecDeque, path::PathBuf, sync::Arc, time::Duration};
 
 use agent_client_protocol::{
-    AcpAgent, Agent, Client, ConnectionTo, Error as AcpError,
+    AcpAgent, Agent, ByteStreams, Client, ConnectionTo, Error as AcpError,
     schema::{
         ProtocolVersion,
         v1::{
@@ -19,7 +19,7 @@ use agent_client_protocol::{
 };
 use anyhow::{Result, anyhow};
 use futures::{
-    FutureExt, StreamExt,
+    AsyncRead, AsyncReadExt, FutureExt, StreamExt,
     channel::{mpsc, oneshot},
     select,
 };
@@ -37,8 +37,15 @@ use super::{
     mapping::{map_permission_options, map_update, permission_title},
     paths::{resolve_workspace_path, slice_lines},
     permission::PermissionBroker,
+    process::AgentProcess,
     prompt::{ResolvedContext, build_prompt_text},
 };
+
+/// How many trailing bytes of the agent's stderr are kept for error messages.
+const STDERR_TAIL_LIMIT: usize = 2048;
+
+/// How long to wait for the rest of the agent's stderr after it exited.
+const STDERR_GRACE: Duration = Duration::from_millis(500);
 
 /// Stop reason reported when a prompt queued during the handshake is cancelled.
 const CANCELLED_STOP_REASON: &str = "Cancelled";
@@ -68,6 +75,8 @@ pub struct SessionEnv {
     pub generation: Arc<Mutex<u64>>,
     /// Generation this session was started with.
     pub session_generation: u64,
+    /// The agent process, shared with the manager so stop can kill it at once.
+    pub process: AgentProcess,
 }
 
 impl SessionEnv {
@@ -149,17 +158,110 @@ fn to_acp_error(err: anyhow::Error) -> AcpError {
     AcpError::internal_error().data(format!("{err:#}"))
 }
 
+/// Reads the agent's stderr until it closes, keeping only the last
+/// [`STDERR_TAIL_LIMIT`] bytes. Draining also keeps a chatty agent from
+/// blocking on a full pipe.
+async fn drain_stderr(
+    mut stderr: impl AsyncRead + Unpin,
+    tail: Arc<Mutex<VecDeque<u8>>>,
+) {
+    let mut buf = [0u8; 1024];
+    loop {
+        let read = match stderr.read(&mut buf).await {
+            Ok(0) | Err(_) => return,
+            Ok(read) => read,
+        };
+        let mut tail = tail.lock();
+        tail.extend(&buf[..read]);
+        let excess = tail.len().saturating_sub(STDERR_TAIL_LIMIT);
+        tail.drain(..excess);
+    }
+}
+
+/// A future that resolves after `duration`, driven by a helper thread
+/// because the session runs on a plain executor without timers.
+fn delay(duration: Duration) -> oneshot::Receiver<()> {
+    let (tx, rx) = oneshot::channel();
+    std::thread::spawn(move || {
+        std::thread::sleep(duration);
+        let _ = tx.send(());
+    });
+    rx
+}
+
+/// Builds the error reported when the agent process exits while the
+/// connection is still open, including the end of its stderr.
+fn exit_error(
+    status: std::io::Result<std::process::ExitStatus>,
+    tail: &Mutex<VecDeque<u8>>,
+) -> AcpError {
+    let status = match status {
+        Ok(status) => format!("the agent exited ({status})"),
+        Err(err) => format!("cannot wait for the agent: {err}"),
+    };
+    let bytes = tail.lock().iter().copied().collect::<Vec<_>>();
+    let stderr = String::from_utf8_lossy(&bytes).trim().to_string();
+    let message = if stderr.is_empty() {
+        status
+    } else {
+        format!("{status}: {stderr}")
+    };
+    AcpError::internal_error().data(message)
+}
+
 /// Runs one agent session until the command channel closes or the agent dies.
+///
+/// The process is spawned here rather than by the ACP crate so its pid can be
+/// handed to [`AgentProcess`]: stop then kills the tree synchronously instead
+/// of relying on this thread to notice and drop the crate's guard.
 pub async fn run_session(
     config: AgentServerConfig,
     env: Arc<SessionEnv>,
-    mut cmds: mpsc::UnboundedReceiver<SessionCommand>,
+    cmds: mpsc::UnboundedReceiver<SessionCommand>,
 ) -> Result<(), AcpError> {
     let agent = AcpAgent::new(
         agent_client_protocol::AcpAgentConfig::new(config.command)
             .args(config.args)
             .envs(config.env),
     );
+    let (stdin, stdout, stderr, mut child) = agent.spawn_process()?;
+    if !env.process.attach(child.id()) {
+        return Ok(());
+    }
+    let tail = Arc::new(Mutex::new(VecDeque::new()));
+    let drain = drain_stderr(stderr, tail.clone()).fuse();
+    let connection =
+        connect(ByteStreams::new(stdin, stdout), env.clone(), cmds).fuse();
+    let exit = child.status().fuse();
+    futures::pin_mut!(drain, connection, exit);
+    let result = loop {
+        select! {
+            res = connection => break res,
+            status = exit => {
+                // Kill what is left of the tree so stderr closes, then give
+                // the drain a moment to collect the last lines.
+                env.process.release();
+                let grace = delay(STDERR_GRACE).fuse();
+                futures::pin_mut!(grace);
+                select! {
+                    () = drain => {},
+                    _ = grace => {},
+                }
+                break Err(exit_error(status, &tail));
+            }
+            () = drain => {},
+        }
+    };
+    env.process.release();
+    result
+}
+
+/// Serves the ACP connection to a spawned agent over `transport`.
+async fn connect(
+    transport: impl agent_client_protocol::ConnectTo<Client> + 'static,
+    env: Arc<SessionEnv>,
+    mut cmds: mpsc::UnboundedReceiver<SessionCommand>,
+) -> Result<(), AcpError> {
     Client
         .builder()
         .on_receive_notification(
@@ -220,7 +322,7 @@ pub async fn run_session(
             },
             agent_client_protocol::on_receive_request!(),
         )
-        .connect_with(agent, {
+        .connect_with(transport, {
             let env = env.clone();
             async move |connection: ConnectionTo<Agent>| {
                 let handshake = async {
@@ -340,6 +442,7 @@ mod tests {
             workspace: PathBuf::from("/ws"),
             generation,
             session_generation: 1,
+            process: AgentProcess::new(),
         }
     }
 

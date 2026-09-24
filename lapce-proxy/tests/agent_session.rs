@@ -263,6 +263,12 @@ fn restarting_does_not_report_the_replaced_session_as_disconnected() {
     }
 }
 
+/// How long `stop` may take to make the agent processes disappear. The kill
+/// itself is synchronous; this only covers the kernel tearing them down, with
+/// headroom for a loaded machine.
+#[cfg(unix)]
+const KILL_TIMEOUT: Duration = Duration::from_secs(3);
+
 /// Lists the pids of processes whose full command line matches `pattern`.
 #[cfg(unix)]
 fn pids_matching(pattern: &str) -> Vec<String> {
@@ -312,6 +318,12 @@ fn stopping_an_agent_that_never_answers_the_handshake_disconnects_and_kills_it()
     );
 
     rig.manager.stop();
+    // Stop kills synchronously: the process must be gone without waiting
+    // for the session thread to wind down.
+    assert!(
+        eventually(KILL_TIMEOUT, || pids_matching(&pattern).is_empty()),
+        "the silent agent process survived stop"
+    );
 
     rig.wait_for(|event| {
         assert!(!is_ready(event), "a silent agent cannot become ready");
@@ -341,6 +353,10 @@ fn stopping_a_ready_session_kills_the_agent_process() {
     );
 
     rig.manager.stop();
+    assert!(
+        eventually(KILL_TIMEOUT, || pids_matching(TAG_ARG).is_empty()),
+        "the mock agent process survived stop"
+    );
 
     rig.wait_for(|event| is_disconnected(event).then_some(()));
     assert!(
@@ -374,6 +390,76 @@ fn cancelling_a_prompt_queued_during_the_handshake_ends_the_turn() {
         }
     });
     assert_eq!(stop_reason, "Cancelled");
+}
+
+#[cfg(unix)]
+#[test]
+fn stopping_kills_the_agents_children_too() {
+    // A launcher (like npx) that starts the real agent as a child.
+    const CHILD_ARG: &str = "3600.5252";
+    let pattern = format!("sleep {CHILD_ARG}");
+    let mut rig = Rig::new();
+    rig.manager.start(
+        AgentServerConfig {
+            command: "sh".to_string(),
+            args: vec!["-c".to_string(), format!("sleep {CHILD_ARG} & wait")],
+            env: Default::default(),
+        },
+        Some(PathBuf::from("/mock")),
+    );
+    assert!(
+        eventually(EVENT_TIMEOUT, || !pids_matching(&pattern).is_empty()),
+        "the launcher never started its child"
+    );
+
+    rig.manager.stop();
+
+    assert!(
+        eventually(KILL_TIMEOUT, || pids_matching(&pattern).is_empty()),
+        "the agent's child process survived stop"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn dropping_the_manager_kills_the_agent_process() {
+    const TAG_ARG: &str = "drop-tag-6161";
+    let mut rig = Rig::new();
+    let mut config = mock_config();
+    config.args = vec![TAG_ARG.to_string()];
+    rig.manager.start(config, Some(PathBuf::from("/mock")));
+    rig.wait_for(|event| is_ready(event).then_some(()));
+
+    let replacement = AgentManager::new(rig.core_rpc.clone(), rig.proxy_rpc.clone());
+    drop(std::mem::replace(&mut rig.manager, replacement));
+
+    assert!(
+        eventually(KILL_TIMEOUT, || pids_matching(TAG_ARG).is_empty()),
+        "the mock agent process survived the manager"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn an_agent_that_exits_reports_its_stderr_and_command() {
+    let mut rig = Rig::new();
+    rig.manager.start(
+        AgentServerConfig {
+            command: "sh".to_string(),
+            args: vec!["-c".to_string(), "echo boom-7171 >&2; exit 3".to_string()],
+            env: Default::default(),
+        },
+        Some(PathBuf::from("/mock")),
+    );
+
+    let reason = rig.wait_for(|event| match event {
+        AgentEvent::Status {
+            status: AgentStatus::Disconnected { reason },
+        } => Some(reason.clone()),
+        _ => None,
+    });
+    assert!(reason.contains("boom-7171"), "stderr missing: {reason}");
+    assert!(reason.contains("sh -c"), "command missing: {reason}");
 }
 
 #[test]

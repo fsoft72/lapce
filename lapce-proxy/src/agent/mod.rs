@@ -5,6 +5,7 @@ pub mod fs;
 pub mod mapping;
 pub mod paths;
 pub mod permission;
+pub mod process;
 pub mod prompt;
 pub mod session;
 
@@ -20,6 +21,7 @@ use lapce_rpc::{
 };
 use parking_lot::Mutex;
 use permission::PermissionBroker;
+use process::AgentProcess;
 use session::{SessionCommand, SessionEnv, run_session};
 
 /// Owns the agent session thread and forwards UI commands to it.
@@ -28,6 +30,8 @@ pub struct AgentManager {
     proxy_rpc: ProxyRpcHandler,
     broker: Arc<PermissionBroker>,
     cmd_tx: Option<mpsc::UnboundedSender<SessionCommand>>,
+    /// Process of the current session, killed synchronously by `stop`.
+    process: Option<AgentProcess>,
     /// Generation of the current session. Only `start` bumps it, so a session
     /// replaced by a restart stays silent (every event it emits is dropped),
     /// while a stopped one still reports `Disconnected`. The lock also orders
@@ -43,6 +47,7 @@ impl AgentManager {
             proxy_rpc,
             broker: Arc::new(PermissionBroker::new()),
             cmd_tx: None,
+            process: None,
             generation: Arc::new(Mutex::new(0)),
         }
     }
@@ -77,6 +82,8 @@ impl AgentManager {
         let config = AgentServerConfig { command, ..config };
         let (cmd_tx, cmd_rx) = mpsc::unbounded();
         self.cmd_tx = Some(cmd_tx);
+        let process = AgentProcess::new();
+        self.process = Some(process.clone());
         let env = Arc::new(SessionEnv {
             core_rpc: self.core_rpc.clone(),
             proxy_rpc: self.proxy_rpc.clone(),
@@ -84,6 +91,7 @@ impl AgentManager {
             workspace,
             generation: self.generation.clone(),
             session_generation,
+            process,
         });
         std::thread::Builder::new()
             .name("AgentSession".to_owned())
@@ -94,6 +102,7 @@ impl AgentManager {
                     cmd_rx,
                 ));
                 let reason = match result {
+                    _ if env.process.was_killed() => "stopped".to_string(),
                     Ok(()) => "session closed".to_string(),
                     Err(err) => format!("`{command_line}` failed: {err}"),
                 };
@@ -138,9 +147,20 @@ impl AgentManager {
         self.broker.reply(request_id, option_id);
     }
 
-    /// Stops the session: rejects pending permissions and closes the command channel.
+    /// Stops the session: kills the agent process tree before returning,
+    /// rejects pending permissions and closes the command channel.
     pub fn stop(&mut self) {
+        if let Some(process) = self.process.take() {
+            process.kill();
+        }
         self.broker.cancel_all();
         self.cmd_tx = None;
+    }
+}
+
+impl Drop for AgentManager {
+    /// Kills the agent when the proxy goes away, even without a `Shutdown`.
+    fn drop(&mut self) {
+        self.stop();
     }
 }

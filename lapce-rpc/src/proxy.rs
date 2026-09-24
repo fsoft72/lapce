@@ -5,6 +5,7 @@ use std::{
         Arc,
         atomic::{AtomicU64, Ordering},
     },
+    time::Duration,
 };
 
 use crossbeam_channel::{Receiver, Sender};
@@ -230,6 +231,8 @@ pub enum ProxyRequest {
         path: PathBuf,
         content: String,
     },
+    /// Stop the agent session. Answered once the agent process was killed.
+    AgentStop {},
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -373,7 +376,6 @@ pub enum ProxyNotification {
         request_id: AgentRequestId,
         option_id: Option<String>,
     },
-    AgentStop {},
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -657,9 +659,16 @@ impl ProxyRpcHandler {
         });
     }
 
-    /// Stops the agent session and its process.
-    pub fn agent_stop(&self) {
-        self.notification(ProxyNotification::AgentStop {});
+    /// Stops the agent session and waits up to `timeout` for the proxy to
+    /// confirm the agent process was killed. Used when a window or the app
+    /// closes, where the process may exit right after. Returns whether the
+    /// proxy confirmed in time.
+    pub fn agent_stop(&self, timeout: Duration) -> bool {
+        let (tx, rx) = crossbeam_channel::bounded(1);
+        self.request_async(ProxyRequest::AgentStop {}, move |result| {
+            let _ = tx.send(result.is_ok());
+        });
+        rx.recv_timeout(timeout).unwrap_or(false)
     }
 
     pub fn handle_response(
