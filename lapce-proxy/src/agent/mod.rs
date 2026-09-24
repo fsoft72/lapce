@@ -2,3 +2,4 @@
 
 pub mod paths;
 pub mod permission;
+pub mod prompt;
