@@ -313,6 +313,18 @@ pub enum LapceWorkbenchCommand {
     #[strum(message = "Reset Editor Font Size")]
     EditorFontReset,
 
+    #[strum(serialize = "terminal_font_increase")]
+    #[strum(message = "Increase Terminal Font Size")]
+    TerminalFontIncrease,
+
+    #[strum(serialize = "terminal_font_decrease")]
+    #[strum(message = "Decrease Terminal Font Size")]
+    TerminalFontDecrease,
+
+    #[strum(serialize = "terminal_font_reset")]
+    #[strum(message = "Reset Terminal Font Size")]
+    TerminalFontReset,
+
     #[strum(serialize = "close_window_tab")]
     #[strum(message = "Close Current Window Tab")]
     CloseWindowTab,

@@ -31,7 +31,9 @@ use super::{
     raw::{EventProxy, RawTerminal},
 };
 use crate::{
-    command::{CommandExecuted, CommandKind, InternalCommand},
+    command::{
+        CommandExecuted, CommandKind, InternalCommand, LapceWorkbenchCommand,
+    },
     debug::{RunDebugMode, RunDebugProcess},
     keypress::{KeyPressFocus, condition::Condition},
     window_tab::CommonData,
@@ -284,6 +286,12 @@ impl KeyPressFocus for TerminalData {
                 }
                 _ => return CommandExecuted::No,
             },
+            CommandKind::Workbench(
+                LapceWorkbenchCommand::TerminalFontIncrease
+                | LapceWorkbenchCommand::TerminalFontDecrease,
+            ) => {
+                self.common.lapce_command.send(command.clone());
+            }
             _ => return CommandExecuted::No,
         };
         CommandExecuted::Yes

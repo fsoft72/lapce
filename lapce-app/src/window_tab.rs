@@ -713,22 +713,42 @@ impl WindowTabData {
         }
     }
 
-    /// Moves the editor font size by `delta` points and persists it.
+    /// Moves the editor font size by `delta` points and persists it. The
+    /// terminal size is pinned first so that it does not follow the editor.
     fn change_editor_font_size(&self, delta: i32) {
-        let size = self
-            .common
-            .config
-            .with_untracked(|config| config.editor.stepped_font_size(delta));
-        Self::save_editor_font_size(size);
+        let config = self.common.config.get_untracked();
+        Self::pin_terminal_font_size(&config);
+        Self::save_font_size("editor", config.editor.stepped_font_size(delta));
     }
 
-    /// Writes `editor.font-size` to the user settings file.
-    fn save_editor_font_size(size: usize) {
+    /// Moves the terminal font size by `delta` points and persists it.
+    fn change_terminal_font_size(&self, delta: i32) {
+        let config = self.common.config.get_untracked();
+        Self::save_font_size("terminal", config.stepped_terminal_font_size(delta));
+    }
+
+    /// Stores the current terminal font size when it is inherited from the
+    /// editor (`terminal.font-size = 0`), making the two independent.
+    fn pin_terminal_font_size(config: &LapceConfig) {
+        if config.terminal.font_size == 0 {
+            Self::save_font_size("terminal", config.terminal_font_size());
+        }
+    }
+
+    /// Writes `font-size` in the given settings section (`editor` or `terminal`).
+    fn save_font_size(section: &str, size: usize) {
         LapceConfig::update_file(
-            "editor",
+            section,
             "font-size",
             toml_edit::Value::from(size as i64),
         );
+    }
+
+    /// Reads the font step from the command data (`1` when absent) and applies
+    /// the given sign.
+    fn font_step(data: &Option<Value>, sign: i32) -> i32 {
+        let step = data.as_ref().and_then(Value::as_i64).unwrap_or(1);
+        step as i32 * sign
     }
 
     pub fn run_workbench_command(
@@ -1220,9 +1240,23 @@ impl WindowTabData {
                     toml_edit::Value::from(1.0),
                 );
             }
-            EditorFontIncrease => self.change_editor_font_size(1),
-            EditorFontDecrease => self.change_editor_font_size(-1),
-            EditorFontReset => Self::save_editor_font_size(DEFAULT_FONT_SIZE),
+            EditorFontIncrease => {
+                self.change_editor_font_size(Self::font_step(&data, 1))
+            }
+            EditorFontDecrease => {
+                self.change_editor_font_size(Self::font_step(&data, -1))
+            }
+            EditorFontReset => {
+                Self::pin_terminal_font_size(&self.common.config.get_untracked());
+                Self::save_font_size("editor", DEFAULT_FONT_SIZE);
+            }
+            TerminalFontIncrease => {
+                self.change_terminal_font_size(Self::font_step(&data, 1))
+            }
+            TerminalFontDecrease => {
+                self.change_terminal_font_size(Self::font_step(&data, -1))
+            }
+            TerminalFontReset => Self::save_font_size("terminal", 0),
 
             ToggleMaximizedPanel => {
                 if let Some(data) = data {

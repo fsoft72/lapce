@@ -21,7 +21,9 @@ use self::{
     color::LapceColor,
     color_theme::{ColorThemeConfig, ThemeColor, ThemeColorPreference},
     core::CoreConfig,
-    editor::{EditorConfig, SCALE_OR_SIZE_LIMIT, WrapStyle},
+    editor::{
+        EditorConfig, MAX_FONT_SIZE, MIN_FONT_SIZE, SCALE_OR_SIZE_LIMIT, WrapStyle,
+    },
     icon::LapceIcons,
     icon_theme::IconThemeConfig,
     svg::SvgStore,
@@ -719,6 +721,13 @@ impl LapceConfig {
         } else {
             self.editor.font_size()
         }
+    }
+
+    /// Returns the terminal font size obtained by moving the current one by
+    /// `delta` points, clamped to the supported range.
+    pub fn stepped_terminal_font_size(&self, delta: i32) -> usize {
+        let size = self.terminal_font_size() as i64 + delta as i64;
+        size.clamp(MIN_FONT_SIZE as i64, MAX_FONT_SIZE as i64) as usize
     }
 
     pub fn terminal_line_height(&self) -> usize {

@@ -17,6 +17,7 @@ use floem::{
 use lapce_rpc::terminal::TermId;
 
 use super::kind::PanelKind;
+use crate::editor::view::zoom_font_on_wheel;
 use crate::{
     app::clickable_icon,
     command::{InternalCommand, LapceWorkbenchCommand},
@@ -321,6 +322,14 @@ fn terminal_tab_split(
                     })
                     .on_event(EventListener::PointerWheel, move |event| {
                         if let Event::PointerWheel(pointer_event) = event {
+                            if zoom_font_on_wheel(
+                                terminal.common.lapce_command,
+                                pointer_event,
+                                LapceWorkbenchCommand::TerminalFontIncrease,
+                                LapceWorkbenchCommand::TerminalFontDecrease,
+                            ) {
+                                return EventPropagation::Stop;
+                            }
                             terminal.clone().wheel_scroll(pointer_event.delta.y);
                             EventPropagation::Stop
                         } else {

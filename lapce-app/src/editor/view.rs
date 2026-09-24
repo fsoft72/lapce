@@ -62,6 +62,7 @@ use crate::{
     debug::{DapData, LapceBreakpoint},
     doc::DocContent,
     editor::gutter::FoldingDisplayItem,
+    listener::Listener,
     text_input::TextInputBuilder,
     window_tab::{CommonData, Focus, WindowTabData},
     workspace::LapceWorkspace,
@@ -1922,7 +1923,7 @@ fn editor_gutter(
                     })
                     .on_event(EventListener::PointerWheel, move |event| {
                         if let Event::PointerWheel(pointer_event) = event {
-                            if !zoom_font_on_wheel(
+                            if !zoom_editor_font_on_wheel(
                                 &e_data.get_untracked(),
                                 pointer_event,
                             ) {
@@ -2058,10 +2059,18 @@ fn editor_breadcrumbs(
     .debug_name("Editor BreadCrumbs")
 }
 
-/// Changes the editor font size when the wheel is used with the zoom
-/// modifier (`Cmd` on macOS, `Ctrl` elsewhere). Returns `true` if the event
-/// was consumed and must not scroll the editor.
-fn zoom_font_on_wheel(e_data: &EditorData, event: &PointerWheelEvent) -> bool {
+/// Font points changed by each wheel event while the zoom modifier is held.
+const WHEEL_FONT_STEP: i64 = 2;
+
+/// Sends `increase` (wheel down) or `decrease` (wheel up) when the wheel is
+/// used with the zoom modifier (`Cmd` on macOS, `Ctrl` elsewhere). Returns
+/// `true` if the event was consumed and must not scroll the view.
+pub fn zoom_font_on_wheel(
+    lapce_command: Listener<LapceCommand>,
+    event: &PointerWheelEvent,
+    increase: LapceWorkbenchCommand,
+    decrease: LapceWorkbenchCommand,
+) -> bool {
     let zoom = if cfg!(target_os = "macos") {
         event.modifiers.meta()
     } else {
@@ -2070,16 +2079,29 @@ fn zoom_font_on_wheel(e_data: &EditorData, event: &PointerWheelEvent) -> bool {
     if !zoom || event.delta.y == 0.0 {
         return false;
     }
-    let command = if event.delta.y > 0.0 {
-        LapceWorkbenchCommand::EditorFontIncrease
+    let command = if event.delta.y < 0.0 {
+        increase
     } else {
-        LapceWorkbenchCommand::EditorFontDecrease
+        decrease
     };
-    e_data.common.lapce_command.send(LapceCommand {
+    lapce_command.send(LapceCommand {
         kind: CommandKind::Workbench(command),
-        data: None,
+        data: Some(serde_json::json!(WHEEL_FONT_STEP)),
     });
     true
+}
+
+/// Wheel zoom of the editor font.
+fn zoom_editor_font_on_wheel(
+    e_data: &EditorData,
+    event: &PointerWheelEvent,
+) -> bool {
+    zoom_font_on_wheel(
+        e_data.common.lapce_command,
+        event,
+        LapceWorkbenchCommand::EditorFontIncrease,
+        LapceWorkbenchCommand::EditorFontDecrease,
+    )
 }
 
 fn editor_content(
@@ -2150,7 +2172,10 @@ fn editor_content(
             })
             .on_event(EventListener::PointerWheel, move |event| {
                 if let Event::PointerWheel(pointer_event) = event {
-                    if zoom_font_on_wheel(&e_data.get_untracked(), pointer_event) {
+                    if zoom_editor_font_on_wheel(
+                        &e_data.get_untracked(),
+                        pointer_event,
+                    ) {
                         return EventPropagation::Stop;
                     }
                 }
