@@ -324,6 +324,31 @@ fn stopping_an_agent_that_never_answers_the_handshake_disconnects_and_kills_it()
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn stopping_a_ready_session_kills_the_agent_process() {
+    // The mock ignores its arguments; this one only tags the process for pgrep.
+    // No leading dashes: pgrep would parse the pattern as an option.
+    const TAG_ARG: &str = "cleanup-tag-5151";
+    let mut rig = Rig::new();
+    let mut config = mock_config();
+    config.args = vec![TAG_ARG.to_string()];
+    rig.manager.start(config, Some(PathBuf::from("/mock")));
+    rig.wait_for(|event| is_ready(event).then_some(()));
+    assert!(
+        !pids_matching(TAG_ARG).is_empty(),
+        "the mock agent is not running after Ready"
+    );
+
+    rig.manager.stop();
+
+    rig.wait_for(|event| is_disconnected(event).then_some(()));
+    assert!(
+        eventually(Duration::from_secs(5), || pids_matching(TAG_ARG).is_empty()),
+        "the mock agent process is still running after stop"
+    );
+}
+
 #[test]
 fn write_outside_the_workspace_is_refused_by_the_path_guard() {
     let mut rig = Rig::new();
