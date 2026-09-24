@@ -28,3 +28,5 @@
 - Added the ACP session driver (AgentManager), the mock agent integration tests, and the proxy/UI protocol wiring. Terminal capability is not advertised in v1.
 - Stopping or restarting the agent now interrupts a handshake that never completes, and events from a replaced session are dropped (its permission prompts are rejected).
 - Added the Agent panel (right side by default) with transcript, permission prompt and input, plus toggle_agent_visual and toggle_agent_focus commands.
+- Agent server settings (`[agent]`) are now read only from the user settings file; a workspace `.lapce/settings.toml` cannot change the command Lapce launches.
+- Added a regression test that the agent process is killed when a ready session is stopped; security review of the agent surface done, spec marked implemented (manual tests with real agents pending).

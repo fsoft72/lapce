@@ -1,7 +1,7 @@
 # AI Agent Panel (ACP client) - Design
 
 Date: 2026-09-24
-Status: draft, awaiting review
+Status: implemented (v1), manual agent tests pending
 
 ## Goal
 
