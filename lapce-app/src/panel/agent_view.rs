@@ -165,7 +165,7 @@ fn agent_body(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View
         }),
         label({
             let agent = agent.clone();
-            move || agent.state.with(|state| format!("{:?}", state.status))
+            move || agent.state.with(|state| state.status.to_string())
         })
         .style(move |s| s.color(config.get().color(LapceColor::EDITOR_DIM))),
     ))

@@ -60,6 +60,19 @@ pub enum AgentStatus {
     Disconnected { reason: String },
 }
 
+impl std::fmt::Display for AgentStatus {
+    /// A short human readable form for the panel's status label.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AgentStatus::Starting => write!(f, "Starting..."),
+            AgentStatus::Ready => write!(f, "Ready"),
+            AgentStatus::Disconnected { reason } => {
+                write!(f, "Disconnected: {reason}")
+            }
+        }
+    }
+}
+
 /// Events streamed from the proxy to the UI while an agent session runs.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -132,5 +145,15 @@ mod tests {
             title: None,
             status: Some(AgentToolStatus::Completed),
         });
+    }
+
+    #[test]
+    fn status_displays_in_a_readable_form() {
+        assert_eq!(AgentStatus::Starting.to_string(), "Starting...");
+        assert_eq!(AgentStatus::Ready.to_string(), "Ready");
+        let status = AgentStatus::Disconnected {
+            reason: "exit 1".to_string(),
+        };
+        assert_eq!(status.to_string(), "Disconnected: exit 1");
     }
 }

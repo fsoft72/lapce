@@ -426,5 +426,8 @@ fn missing_agent_binary_reports_disconnected_with_a_reason() {
         } => Some(reason.clone()),
         _ => None,
     });
-    assert!(!reason.is_empty());
+    assert!(
+        reason.contains("definitely-not-a-real-agent-binary"),
+        "the reason must name the command that was tried: {reason}"
+    );
 }

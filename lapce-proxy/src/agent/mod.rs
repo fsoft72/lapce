@@ -1,5 +1,6 @@
 //! AI agent (ACP client) support.
 
+pub mod command;
 pub mod fs;
 pub mod mapping;
 pub mod paths;
@@ -71,6 +72,9 @@ impl AgentManager {
             });
             *generation
         };
+        let command = command::resolve_command(&config.command);
+        let command_line = command::describe_command(&command, &config.args);
+        let config = AgentServerConfig { command, ..config };
         let (cmd_tx, cmd_rx) = mpsc::unbounded();
         self.cmd_tx = Some(cmd_tx);
         let env = Arc::new(SessionEnv {
@@ -91,7 +95,7 @@ impl AgentManager {
                 ));
                 let reason = match result {
                     Ok(()) => "session closed".to_string(),
-                    Err(err) => format!("{err}"),
+                    Err(err) => format!("`{command_line}` failed: {err}"),
                 };
                 // Gated like every other session event: a session replaced by
                 // a restart stays silent, a stopped one reports.
