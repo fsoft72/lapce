@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use super::plugin::VoltID;
 use crate::{
     RequestId, RpcError, RpcMessage,
+    agent::{AgentContext, AgentRequestId, AgentServerConfig},
     buffer::BufferId,
     dap_types::{self, DapId, RunDebugConfig, SourceBreakpoint, ThreadId},
     file::{FileNodeItem, PathObject},
@@ -360,6 +361,19 @@ pub enum ProxyNotification {
         path: PathBuf,
         breakpoints: Vec<SourceBreakpoint>,
     },
+    AgentStart {
+        config: AgentServerConfig,
+    },
+    AgentPrompt {
+        text: String,
+        contexts: Vec<AgentContext>,
+    },
+    AgentCancel {},
+    AgentPermissionReply {
+        request_id: AgentRequestId,
+        option_id: Option<String>,
+    },
+    AgentStop {},
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -614,6 +628,38 @@ impl ProxyRpcHandler {
                 message: "unexpected response to AgentWriteFile".to_string(),
             }),
         }
+    }
+
+    /// Starts (or restarts) the agent session.
+    pub fn agent_start(&self, config: AgentServerConfig) {
+        self.notification(ProxyNotification::AgentStart { config });
+    }
+
+    /// Sends a user prompt with editor context to the agent.
+    pub fn agent_prompt(&self, text: String, contexts: Vec<AgentContext>) {
+        self.notification(ProxyNotification::AgentPrompt { text, contexts });
+    }
+
+    /// Cancels the running agent turn.
+    pub fn agent_cancel(&self) {
+        self.notification(ProxyNotification::AgentCancel {});
+    }
+
+    /// Answers a pending permission request. `None` rejects it.
+    pub fn agent_permission_reply(
+        &self,
+        request_id: AgentRequestId,
+        option_id: Option<String>,
+    ) {
+        self.notification(ProxyNotification::AgentPermissionReply {
+            request_id,
+            option_id,
+        });
+    }
+
+    /// Stops the agent session and its process.
+    pub fn agent_stop(&self) {
+        self.notification(ProxyNotification::AgentStop {});
     }
 
     pub fn handle_response(

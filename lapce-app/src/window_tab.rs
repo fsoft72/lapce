@@ -53,6 +53,7 @@ use tracing::{Level, debug, error, event};
 
 use crate::{
     about::AboutData,
+    agent::AgentData,
     alert::{AlertBoxData, AlertButton},
     code_action::{CodeActionData, CodeActionStatus},
     command::{
@@ -176,6 +177,7 @@ pub struct WindowTabData {
     pub panel: PanelData,
     pub terminal: TerminalPanelData,
     pub plugin: PluginData,
+    pub agent: AgentData,
     pub code_action: RwSignal<CodeActionData>,
     pub code_lens: RwSignal<Option<ViewId>>,
     pub source_control: SourceControlData,
@@ -520,6 +522,7 @@ impl WindowTabData {
             common.clone(),
             proxy.core_rpc.clone(),
         );
+        let agent = AgentData::new(cx, main_split.clone(), common.clone());
 
         {
             let notification = create_signal_from_channel(term_notification_rx);
@@ -556,6 +559,7 @@ impl WindowTabData {
             code_lens: cx.create_rw_signal(None),
             source_control,
             plugin,
+            agent,
             rename,
             global_search,
             call_hierarchy_data: CallHierarchyData {
@@ -2372,6 +2376,12 @@ impl WindowTabData {
             }
             CoreNotification::WorkspaceFileChange => {
                 self.file_explorer.reload();
+            }
+            CoreNotification::AgentEvent { event } => {
+                self.agent.handle_event(event.clone());
+            }
+            CoreNotification::AgentApplyEdit { path, content } => {
+                self.agent.apply_edit(path, content);
             }
             _ => {}
         }

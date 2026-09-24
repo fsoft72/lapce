@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     RequestId, RpcError, RpcMessage,
+    agent::AgentEvent,
     dap_types::{
         self, DapId, RunDebugConfig, Scope, StackFrame, Stopped, ThreadId, Variable,
     },
@@ -151,6 +152,10 @@ pub enum CoreNotification {
     AgentApplyEdit {
         path: PathBuf,
         content: String,
+    },
+    /// An event from the running agent session.
+    AgentEvent {
+        event: AgentEvent,
     },
 }
 

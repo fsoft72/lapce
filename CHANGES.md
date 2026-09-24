@@ -25,3 +25,4 @@
 - Added mapping from ACP session updates and permission requests to UI events.
 - Added ProxyRequest::AgentReadFile/AgentWriteFile and CoreNotification::AgentApplyEdit so the agent reads unsaved buffers and edits open files through the UI.
 - Added [agent] settings (default-server, servers) and the AgentState transcript model for the panel.
+- Added the ACP session driver (AgentManager), the mock agent integration tests, and the proxy/UI protocol wiring. Terminal capability is not advertised in v1.

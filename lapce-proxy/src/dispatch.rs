@@ -62,6 +62,7 @@ pub struct Dispatcher {
     file_watcher: FileWatcher,
     window_id: usize,
     tab_id: usize,
+    agent: crate::agent::AgentManager,
 }
 
 impl ProxyHandler for Dispatcher {
@@ -159,11 +160,30 @@ impl ProxyHandler for Dispatcher {
                 self.catalog_rpc.signature_help(request_id, &path, position);
             }
             Shutdown {} => {
+                self.agent.stop();
                 self.catalog_rpc.shutdown();
                 for (_, sender) in self.terminals.iter() {
                     sender.send(Msg::Shutdown);
                 }
                 self.proxy_rpc.shutdown();
+            }
+            AgentStart { config } => {
+                self.agent.start(config, self.workspace.clone());
+            }
+            AgentPrompt { text, contexts } => {
+                self.agent.prompt(text, contexts);
+            }
+            AgentCancel {} => {
+                self.agent.cancel();
+            }
+            AgentPermissionReply {
+                request_id,
+                option_id,
+            } => {
+                self.agent.permission_reply(request_id, option_id);
+            }
+            AgentStop {} => {
+                self.agent.stop();
             }
             Update { path, delta, rev } => {
                 let buffer = self.buffers.get_mut(&path).unwrap();
@@ -1237,6 +1257,8 @@ impl Dispatcher {
             PluginCatalogRpcHandler::new(core_rpc.clone(), proxy_rpc.clone());
 
         let file_watcher = FileWatcher::new();
+        let agent =
+            crate::agent::AgentManager::new(core_rpc.clone(), proxy_rpc.clone());
 
         Self {
             workspace: None,
@@ -1248,6 +1270,7 @@ impl Dispatcher {
             file_watcher,
             window_id: 1,
             tab_id: 1,
+            agent,
         }
     }
 

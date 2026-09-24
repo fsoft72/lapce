@@ -1,10 +1,20 @@
 //! UI state of the AI agent panel.
 
-use std::hash::{Hash, Hasher};
+use std::{
+    hash::{Hash, Hasher},
+    path::Path,
+    rc::Rc,
+};
 
+use floem::reactive::{RwSignal, Scope, SignalUpdate, SignalWith};
+use lapce_core::{
+    buffer::rope_text::RopeText, editor::EditType, selection::Selection,
+};
 use lapce_rpc::agent::{
     AgentEvent, AgentPermissionOption, AgentRequestId, AgentStatus, AgentToolStatus,
 };
+
+use crate::{main_split::MainSplitData, window_tab::CommonData};
 
 /// One entry in the chat transcript.
 #[derive(Debug, Clone, PartialEq)]
@@ -168,6 +178,56 @@ impl AgentState {
                 self.items.push_back(AgentItem::Error(message.clone()));
             }
         }
+    }
+}
+
+/// Reactive wrapper around [`AgentState`] plus the pieces needed to edit buffers.
+#[derive(Clone)]
+pub struct AgentData {
+    /// Transcript, status and pending permission of the agent panel.
+    pub state: RwSignal<AgentState>,
+    /// Open documents, used to apply agent edits to buffers.
+    pub main_split: MainSplitData,
+    /// Shared window tab data (proxy handle, config, focus).
+    pub common: Rc<CommonData>,
+}
+
+impl AgentData {
+    /// Creates the agent data with an empty transcript.
+    pub fn new(
+        cx: Scope,
+        main_split: MainSplitData,
+        common: Rc<CommonData>,
+    ) -> Self {
+        Self {
+            state: cx.create_rw_signal(AgentState::default()),
+            main_split,
+            common,
+        }
+    }
+
+    /// Applies an event coming from the proxy.
+    pub fn handle_event(&self, event: AgentEvent) {
+        self.state.update(|state| state.apply(&event));
+    }
+
+    /// Replaces the whole content of an open document as one undoable edit.
+    /// Does nothing if the document is not open or the text is unchanged.
+    pub fn apply_edit(&self, path: &Path, content: &str) {
+        let Some(doc) = self
+            .main_split
+            .docs
+            .with_untracked(|docs| docs.get(path).cloned())
+        else {
+            return;
+        };
+        let (len, same) = doc
+            .buffer
+            .with_untracked(|buffer| (buffer.len(), buffer.to_string() == content));
+        if same {
+            return;
+        }
+        doc.do_raw_edit(&[(Selection::region(0, len), content)], EditType::Other);
     }
 }
 
