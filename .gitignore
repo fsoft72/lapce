@@ -13,3 +13,5 @@ vendor/
 *.patch
 *.tar
 *.gz
+
+bin/
