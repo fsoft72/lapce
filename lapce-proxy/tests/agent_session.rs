@@ -263,6 +263,67 @@ fn restarting_does_not_report_the_replaced_session_as_disconnected() {
     }
 }
 
+/// Lists the pids of processes whose full command line matches `pattern`.
+#[cfg(unix)]
+fn pids_matching(pattern: &str) -> Vec<String> {
+    let out = std::process::Command::new("pgrep")
+        .args(["-f", pattern])
+        .output()
+        .expect("pgrep must be available to run this test");
+    String::from_utf8_lossy(&out.stdout)
+        .split_whitespace()
+        .map(str::to_string)
+        .collect()
+}
+
+/// Polls until `check` holds or `timeout` elapses. Returns the last result.
+#[cfg(unix)]
+fn eventually(timeout: Duration, mut check: impl FnMut() -> bool) -> bool {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if check() {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn stopping_an_agent_that_never_answers_the_handshake_disconnects_and_kills_it() {
+    // A unique argument so pgrep only sees the child of this test.
+    const SILENT_ARG: &str = "3600.4242";
+    let pattern = format!("sleep {SILENT_ARG}");
+    let mut rig = Rig::new();
+    rig.manager.start(
+        AgentServerConfig {
+            command: "sleep".to_string(),
+            args: vec![SILENT_ARG.to_string()],
+            env: Default::default(),
+        },
+        Some(PathBuf::from("/mock")),
+    );
+    assert!(
+        eventually(EVENT_TIMEOUT, || !pids_matching(&pattern).is_empty()),
+        "the silent agent was never spawned"
+    );
+
+    rig.manager.stop();
+
+    rig.wait_for(|event| {
+        assert!(!is_ready(event), "a silent agent cannot become ready");
+        is_disconnected(event).then_some(())
+    });
+    assert!(
+        eventually(Duration::from_secs(5), || pids_matching(&pattern)
+            .is_empty()),
+        "the silent agent process is still running after stop"
+    );
+}
+
 #[test]
 fn write_outside_the_workspace_is_refused_by_the_path_guard() {
     let mut rig = Rig::new();

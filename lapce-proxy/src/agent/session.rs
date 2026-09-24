@@ -1,6 +1,6 @@
 //! One ACP client session: spawns the agent, serves its requests, runs prompts.
 
-use std::{path::PathBuf, sync::Arc};
+use std::{collections::VecDeque, path::PathBuf, sync::Arc};
 
 use agent_client_protocol::{
     AcpAgent, Agent, Client, ConnectionTo, Error as AcpError,
@@ -18,12 +18,20 @@ use agent_client_protocol::{
     },
 };
 use anyhow::{Result, anyhow};
-use futures::{FutureExt, StreamExt, channel::mpsc, select};
+use futures::{
+    FutureExt, StreamExt,
+    channel::{mpsc, oneshot},
+    select,
+};
 use lapce_rpc::{
-    agent::{AgentContext, AgentEvent, AgentServerConfig, AgentStatus},
+    agent::{
+        AgentContext, AgentEvent, AgentPermissionOption, AgentServerConfig,
+        AgentStatus,
+    },
     core::{CoreNotification, CoreRpcHandler},
     proxy::ProxyRpcHandler,
 };
+use parking_lot::Mutex;
 
 use super::{
     mapping::{map_permission_options, map_update, permission_title},
@@ -53,13 +61,45 @@ pub struct SessionEnv {
     pub broker: Arc<PermissionBroker>,
     /// Root the agent is confined to.
     pub workspace: PathBuf,
+    /// Generation of the current session, shared with the manager.
+    pub generation: Arc<Mutex<u64>>,
+    /// Generation this session was started with.
+    pub session_generation: u64,
 }
 
 impl SessionEnv {
-    /// Sends an event to the UI.
-    fn emit(&self, event: AgentEvent) {
+    /// Sends an event to the UI, unless a newer session replaced this one.
+    /// The check and the send happen under the generation lock, so a stale
+    /// event cannot land after the new session's `Starting`. Returns whether
+    /// the event was sent.
+    pub fn emit(&self, event: AgentEvent) -> bool {
+        let current = self.generation.lock();
+        if *current != self.session_generation {
+            return false;
+        }
         self.core_rpc
             .notification(CoreNotification::AgentEvent { event });
+        true
+    }
+
+    /// Registers a permission request with the broker and shows it in the UI.
+    /// If this session is stale the request is rejected at once, so the agent
+    /// sees a cancellation instead of waiting on a prompt nobody can answer.
+    fn open_permission(
+        &self,
+        title: String,
+        options: Vec<AgentPermissionOption>,
+    ) -> oneshot::Receiver<Option<String>> {
+        let (request_id, decision) = self.broker.register();
+        let shown = self.emit(AgentEvent::PermissionRequest {
+            request_id,
+            title,
+            options,
+        });
+        if !shown {
+            self.broker.reply(request_id, None);
+        }
+        decision
     }
 
     /// Serves `fs/read_text_file`: guard the path, read through the dispatcher, slice lines.
@@ -160,12 +200,10 @@ pub async fn run_session(
                 let env = env.clone();
                 async move |req: RequestPermissionRequest, responder, cx| {
                     // Never await the user inside a handler: it would freeze the event loop.
-                    let (request_id, decision) = env.broker.register();
-                    env.emit(AgentEvent::PermissionRequest {
-                        request_id,
-                        title: permission_title(&req),
-                        options: map_permission_options(&req),
-                    });
+                    let decision = env.open_permission(
+                        permission_title(&req),
+                        map_permission_options(&req),
+                    );
                     cx.spawn(async move {
                         let outcome = match decision.await {
                             Ok(Some(option_id)) => RequestPermissionOutcome::Selected(
@@ -182,26 +220,54 @@ pub async fn run_session(
         .connect_with(agent, {
             let env = env.clone();
             async move |connection: ConnectionTo<Agent>| {
-                connection
-                    .send_request(
-                        InitializeRequest::new(ProtocolVersion::V1).client_capabilities(
-                            ClientCapabilities::new().fs(FileSystemCapabilities::new()
-                                .read_text_file(true)
-                                .write_text_file(true)),
-                        ),
-                    )
-                    .block_task()
-                    .await?;
-                let session = connection
-                    .send_request(NewSessionRequest::new(env.workspace.clone()))
-                    .block_task()
-                    .await?;
-                let session_id = session.session_id;
+                let handshake = async {
+                    connection
+                        .send_request(
+                            InitializeRequest::new(ProtocolVersion::V1)
+                                .client_capabilities(ClientCapabilities::new().fs(
+                                    FileSystemCapabilities::new()
+                                        .read_text_file(true)
+                                        .write_text_file(true),
+                                )),
+                        )
+                        .block_task()
+                        .await?;
+                    let session = connection
+                        .send_request(NewSessionRequest::new(env.workspace.clone()))
+                        .block_task()
+                        .await?;
+                    Ok::<_, AcpError>(session.session_id)
+                }
+                .fuse();
+                futures::pin_mut!(handshake);
+                // Watch the commands during the handshake too, so stop can
+                // interrupt an agent that never answers. There is deliberately
+                // no timeout: a first `npx` download can be legitimately slow.
+                let mut queued = VecDeque::new();
+                let session_id = loop {
+                    select! {
+                        res = handshake => break res?,
+                        cmd = cmds.next() => match cmd {
+                            Some(prompt @ SessionCommand::Prompt { .. }) => {
+                                queued.push_back(prompt);
+                            }
+                            Some(SessionCommand::Cancel) => queued.clear(),
+                            None => return Ok(()),
+                        },
+                    }
+                };
                 env.emit(AgentEvent::Status {
                     status: AgentStatus::Ready,
                 });
 
-                while let Some(cmd) = cmds.next().await {
+                loop {
+                    let cmd = match queued.pop_front() {
+                        Some(cmd) => cmd,
+                        None => match cmds.next().await {
+                            Some(cmd) => cmd,
+                            None => break,
+                        },
+                    };
                     let SessionCommand::Prompt { text, contexts } = cmd else {
                         continue;
                     };
@@ -230,17 +296,96 @@ pub async fn run_session(
                             },
                         }
                     };
-                    match outcome {
-                        Ok(stop) => env.emit(AgentEvent::TurnEnded {
+                    let event = match outcome {
+                        Ok(stop) => AgentEvent::TurnEnded {
                             stop_reason: format!("{stop:?}"),
-                        }),
-                        Err(err) => env.emit(AgentEvent::Error {
+                        },
+                        Err(err) => AgentEvent::Error {
                             message: format!("Prompt failed: {err}"),
-                        }),
-                    }
+                        },
+                    };
+                    env.emit(event);
                 }
                 Ok(())
             }
         })
         .await
+}
+
+#[cfg(test)]
+mod tests {
+    use futures::executor::block_on;
+    use lapce_rpc::core::CoreRpc;
+
+    use super::*;
+
+    /// Builds a session env of generation 1 with the given shared generation.
+    fn env_with(generation: Arc<Mutex<u64>>) -> SessionEnv {
+        SessionEnv {
+            core_rpc: CoreRpcHandler::new(),
+            proxy_rpc: ProxyRpcHandler::new(),
+            broker: Arc::new(PermissionBroker::new()),
+            workspace: PathBuf::from("/ws"),
+            generation,
+            session_generation: 1,
+        }
+    }
+
+    /// Returns the next agent event already queued for the UI, if any.
+    fn queued_event(env: &SessionEnv) -> Option<AgentEvent> {
+        match env.core_rpc.rx().try_recv().ok()? {
+            CoreRpc::Notification(n) => match *n {
+                CoreNotification::AgentEvent { event } => Some(event),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn current_session_emits_events() {
+        let env = env_with(Arc::new(Mutex::new(1)));
+        assert!(env.emit(AgentEvent::TurnEnded {
+            stop_reason: "EndTurn".to_string(),
+        }));
+        assert!(matches!(
+            queued_event(&env),
+            Some(AgentEvent::TurnEnded { .. })
+        ));
+    }
+
+    #[test]
+    fn replaced_session_events_are_dropped() {
+        let generation = Arc::new(Mutex::new(1));
+        let env = env_with(generation.clone());
+        *generation.lock() = 2;
+        assert!(!env.emit(AgentEvent::TurnEnded {
+            stop_reason: "EndTurn".to_string(),
+        }));
+        assert!(queued_event(&env).is_none());
+    }
+
+    #[test]
+    fn current_session_permission_is_shown_and_awaits_the_user() {
+        let env = env_with(Arc::new(Mutex::new(1)));
+        let mut decision = env.open_permission("Edit".to_string(), vec![]);
+        let Some(AgentEvent::PermissionRequest { request_id, .. }) =
+            queued_event(&env)
+        else {
+            panic!("the permission request was not shown");
+        };
+        assert_eq!(decision.try_recv(), Ok(None), "must still be pending");
+        assert!(env.broker.reply(request_id, Some("allow".to_string())));
+        assert_eq!(block_on(decision), Ok(Some("allow".to_string())));
+    }
+
+    #[test]
+    fn replaced_session_permission_is_rejected_without_a_prompt() {
+        let generation = Arc::new(Mutex::new(1));
+        let env = env_with(generation.clone());
+        *generation.lock() = 2;
+        let decision = env.open_permission("Edit".to_string(), vec![]);
+        assert!(queued_event(&env).is_none());
+        assert_eq!(block_on(decision), Ok(None));
+    }
 }

@@ -28,9 +28,9 @@ pub struct AgentManager {
     broker: Arc<PermissionBroker>,
     cmd_tx: Option<mpsc::UnboundedSender<SessionCommand>>,
     /// Generation of the current session. Only `start` bumps it, so a session
-    /// replaced by a restart stays silent when it ends, while a stopped one
-    /// still reports `Disconnected`. The lock also orders the old session's
-    /// final event against the new session's `Starting`.
+    /// replaced by a restart stays silent (every event it emits is dropped),
+    /// while a stopped one still reports `Disconnected`. The lock also orders
+    /// the old session's events against the new session's `Starting`.
     generation: Arc<Mutex<u64>>,
 }
 
@@ -78,26 +78,25 @@ impl AgentManager {
             proxy_rpc: self.proxy_rpc.clone(),
             broker: self.broker.clone(),
             workspace,
+            generation: self.generation.clone(),
+            session_generation,
         });
-        let core_rpc = self.core_rpc.clone();
-        let generation = self.generation.clone();
         std::thread::Builder::new()
             .name("AgentSession".to_owned())
             .spawn(move || {
-                let result =
-                    futures::executor::block_on(run_session(config, env, cmd_rx));
+                let result = futures::executor::block_on(run_session(
+                    config,
+                    env.clone(),
+                    cmd_rx,
+                ));
                 let reason = match result {
                     Ok(()) => "session closed".to_string(),
                     Err(err) => format!("{err}"),
                 };
-                let current = generation.lock();
-                if *current != session_generation {
-                    return;
-                }
-                core_rpc.notification(CoreNotification::AgentEvent {
-                    event: AgentEvent::Status {
-                        status: AgentStatus::Disconnected { reason },
-                    },
+                // Gated like every other session event: a session replaced by
+                // a restart stays silent, a stopped one reports.
+                env.emit(AgentEvent::Status {
+                    status: AgentStatus::Disconnected { reason },
                 });
             })
             .expect("failed to spawn the agent session thread");
