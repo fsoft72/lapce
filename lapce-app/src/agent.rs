@@ -6,15 +6,26 @@ use std::{
     rc::Rc,
 };
 
-use floem::reactive::{RwSignal, Scope, SignalUpdate, SignalWith};
+use floem::{
+    keyboard::Modifiers,
+    reactive::{RwSignal, Scope, SignalGet, SignalUpdate, SignalWith},
+};
 use lapce_core::{
-    buffer::rope_text::RopeText, editor::EditType, selection::Selection,
+    buffer::rope_text::RopeText, command::EditCommand, editor::EditType, mode::Mode,
+    selection::Selection,
 };
 use lapce_rpc::agent::{
-    AgentEvent, AgentPermissionOption, AgentRequestId, AgentStatus, AgentToolStatus,
+    AgentContext, AgentEvent, AgentPermissionOption, AgentRequestId, AgentStatus,
+    AgentToolStatus,
 };
 
-use crate::{main_split::MainSplitData, window_tab::CommonData};
+use crate::{
+    command::{CommandExecuted, CommandKind, LapceCommand},
+    editor::EditorData,
+    keypress::{KeyPressFocus, condition::Condition},
+    main_split::MainSplitData,
+    window_tab::CommonData,
+};
 
 /// One entry in the chat transcript.
 #[derive(Debug, Clone, PartialEq)]
@@ -190,6 +201,8 @@ pub struct AgentData {
     pub main_split: MainSplitData,
     /// Shared window tab data (proxy handle, config, focus).
     pub common: Rc<CommonData>,
+    /// The prompt input box.
+    pub input: EditorData,
 }
 
 impl AgentData {
@@ -199,10 +212,12 @@ impl AgentData {
         main_split: MainSplitData,
         common: Rc<CommonData>,
     ) -> Self {
+        let input = main_split.editors.make_local(cx, common.clone());
         Self {
             state: cx.create_rw_signal(AgentState::default()),
             main_split,
             common,
+            input,
         }
     }
 
@@ -228,6 +243,144 @@ impl AgentData {
             return;
         }
         doc.do_raw_edit(&[(Selection::region(0, len), content)], EditType::Other);
+    }
+
+    /// Reads and clears the input box. Returns `None` when it only has whitespace.
+    fn take_input_text(&self) -> Option<String> {
+        let doc = self.input.doc();
+        let text = doc.buffer.with_untracked(|buffer| buffer.to_string());
+        let text = text.trim().to_string();
+        if text.is_empty() {
+            return None;
+        }
+        let len = doc.buffer.with_untracked(|buffer| buffer.len());
+        doc.do_raw_edit(&[(Selection::region(0, len), "")], EditType::Other);
+        Some(text)
+    }
+
+    /// Builds the context attached to a prompt: the active file, and its selection if any.
+    fn active_context(&self) -> Vec<AgentContext> {
+        let Some(editor) = self.main_split.active_editor.get_untracked() else {
+            return Vec::new();
+        };
+        let doc = editor.doc();
+        let Some(path) = doc
+            .content
+            .with_untracked(|content| content.path().cloned())
+        else {
+            return Vec::new();
+        };
+        let selection = editor
+            .cursor()
+            .with_untracked(|cursor| cursor.get_selection())
+            .filter(|(start, end)| start != end)
+            .map(|(start, end)| {
+                doc.buffer.with_untracked(|buffer| {
+                    buffer.slice_to_cow(start..end).to_string()
+                })
+            });
+        vec![AgentContext { path, selection }]
+    }
+
+    /// Starts the configured agent server. Reports configuration problems in the transcript.
+    pub fn restart(&self) {
+        match self.common.config.get_untracked().agent.resolve() {
+            Ok(config) => self.common.proxy.agent_start(config),
+            Err(message) => self.handle_event(AgentEvent::Error { message }),
+        }
+    }
+
+    /// Sends the input box content as a prompt, starting the agent first if needed.
+    pub fn send_input(&self) {
+        if self.state.with_untracked(|state| state.busy) {
+            return;
+        }
+        let Some(text) = self.take_input_text() else {
+            return;
+        };
+        let connected = self.state.with_untracked(|state| {
+            matches!(state.status, AgentStatus::Ready | AgentStatus::Starting)
+        });
+        if !connected {
+            self.restart();
+        }
+        self.state.update(|state| state.push_user(&text));
+        self.common.proxy.agent_prompt(text, self.active_context());
+    }
+
+    /// Cancels the running turn.
+    pub fn cancel(&self) {
+        self.common.proxy.agent_cancel();
+    }
+
+    /// Answers the pending permission request with `option_id`, or rejects it with `None`.
+    pub fn reply_permission(&self, option_id: Option<String>) {
+        let Some(pending) = self
+            .state
+            .try_update(|state| state.take_pending())
+            .flatten()
+        else {
+            return;
+        };
+        self.common
+            .proxy
+            .agent_permission_reply(pending.request_id, option_id);
+    }
+}
+
+impl std::fmt::Debug for AgentData {
+    /// Prints the state only; `MainSplitData` does not implement `Debug`.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AgentData")
+            .field("state", &self.state)
+            .finish_non_exhaustive()
+    }
+}
+
+impl KeyPressFocus for AgentData {
+    /// The input box always behaves like an insert-mode text field.
+    fn get_mode(&self) -> Mode {
+        Mode::Insert
+    }
+
+    /// The agent panel only satisfies the panel focus condition.
+    fn check_condition(&self, condition: Condition) -> bool {
+        matches!(condition, Condition::PanelFocus)
+    }
+
+    /// Forwards editing commands to the input box; Enter sends the prompt.
+    fn run_command(
+        &self,
+        command: &LapceCommand,
+        count: Option<usize>,
+        mods: Modifiers,
+    ) -> CommandExecuted {
+        match &command.kind {
+            CommandKind::Workbench(_) => {}
+            CommandKind::Scroll(_) => {}
+            CommandKind::Focus(_) => {}
+            CommandKind::Edit(_)
+            | CommandKind::Move(_)
+            | CommandKind::MultiSelection(_) => {
+                #[allow(clippy::single_match)]
+                match command.kind {
+                    CommandKind::Edit(EditCommand::InsertNewLine) => {
+                        self.send_input();
+                        return CommandExecuted::Yes;
+                    }
+                    _ => {}
+                }
+
+                return self.input.run_command(command, count, mods);
+            }
+            CommandKind::MotionMode(_) => {}
+        }
+        CommandExecuted::No
+    }
+
+    /// Types a character into the input box.
+    fn receive_char(&self, c: &str) {
+        self.input.receive_char(c);
     }
 }
 

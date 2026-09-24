@@ -486,6 +486,10 @@ pub enum LapceWorkbenchCommand {
     #[strum(serialize = "toggle_problem_focus")]
     ToggleProblemFocus,
 
+    #[strum(message = "Toggle Agent Focus")]
+    #[strum(serialize = "toggle_agent_focus")]
+    ToggleAgentFocus,
+
     #[strum(message = "Toggle Search Focus")]
     #[strum(serialize = "toggle_search_focus")]
     ToggleSearchFocus,
@@ -505,6 +509,10 @@ pub enum LapceWorkbenchCommand {
 
     #[strum(serialize = "toggle_problem_visual")]
     ToggleProblemVisual,
+
+    #[strum(message = "Toggle Agent Visual")]
+    #[strum(serialize = "toggle_agent_visual")]
+    ToggleAgentVisual,
 
     #[strum(serialize = "toggle_debug_visual")]
     ToggleDebugVisual,

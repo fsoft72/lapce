@@ -1323,6 +1323,9 @@ impl WindowTabData {
             ToggleProblemFocus => {
                 self.toggle_panel_focus(PanelKind::Problem);
             }
+            ToggleAgentFocus => {
+                self.toggle_panel_focus(PanelKind::Agent);
+            }
             ToggleSearchFocus => {
                 self.toggle_panel_focus(PanelKind::Search);
             }
@@ -1340,6 +1343,9 @@ impl WindowTabData {
             }
             ToggleProblemVisual => {
                 self.toggle_panel_visual(PanelKind::Problem);
+            }
+            ToggleAgentVisual => {
+                self.toggle_panel_visual(PanelKind::Agent);
             }
             ToggleDebugVisual => {
                 self.toggle_panel_visual(PanelKind::Debug);
@@ -2414,6 +2420,9 @@ impl WindowTabData {
             Focus::Panel(PanelKind::SourceControl) => {
                 Some(keypress.key_down(event, &self.source_control))
             }
+            Focus::Panel(PanelKind::Agent) => {
+                Some(keypress.key_down(event, &self.agent))
+            }
             _ => None,
         };
 
@@ -2700,9 +2709,10 @@ impl WindowTabData {
                 // in those cases.
                 self.panel.is_panel_visible(&kind)
             }
-            PanelKind::Terminal | PanelKind::SourceControl | PanelKind::Search => {
-                self.is_panel_focused(kind)
-            }
+            PanelKind::Terminal
+            | PanelKind::SourceControl
+            | PanelKind::Search
+            | PanelKind::Agent => self.is_panel_focused(kind),
         };
         if should_hide {
             self.hide_panel(kind);

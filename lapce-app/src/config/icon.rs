@@ -47,6 +47,7 @@ impl LapceIcons {
     pub const IMAGE_LOADING: &'static str = "image_loading";
     pub const IMAGE_ERROR: &'static str = "image_error";
 
+    pub const AGENT: &'static str = "agent";
     pub const SCM: &'static str = "scm.icon";
     pub const SCM_DIFF_MODIFIED: &'static str = "scm.diff.modified";
     pub const SCM_DIFF_ADDED: &'static str = "scm.diff.added";
