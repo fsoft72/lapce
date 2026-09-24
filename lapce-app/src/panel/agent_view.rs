@@ -93,7 +93,8 @@ fn item_view(window_tab_data: Rc<WindowTabData>, item: AgentItem) -> impl View {
     })
 }
 
-/// The permission prompt shown while the agent waits for a decision.
+/// The permission prompt shown while the agent waits for a decision. Only
+/// the oldest pending request is shown; answering it reveals the next.
 fn permission_bar(
     window_tab_data: Rc<WindowTabData>,
     agent: AgentData,
@@ -101,7 +102,11 @@ fn permission_bar(
     let config = window_tab_data.common.config;
     let pending = {
         let agent = agent.clone();
-        move || agent.state.with(|state| state.pending.clone())
+        move || {
+            agent
+                .state
+                .with(|state| state.current_permission().cloned())
+        }
     };
     dyn_stack(
         move || pending().into_iter().collect::<Vec<_>>(),

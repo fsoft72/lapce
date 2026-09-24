@@ -40,6 +40,9 @@ use super::{
     prompt::{ResolvedContext, build_prompt_text},
 };
 
+/// Stop reason reported when a prompt queued during the handshake is cancelled.
+const CANCELLED_STOP_REASON: &str = "Cancelled";
+
 /// Commands the manager sends to a running session.
 pub enum SessionCommand {
     /// Runs one turn with the user text and the editor context.
@@ -251,7 +254,16 @@ pub async fn run_session(
                             Some(prompt @ SessionCommand::Prompt { .. }) => {
                                 queued.push_back(prompt);
                             }
-                            Some(SessionCommand::Cancel) => queued.clear(),
+                            Some(SessionCommand::Cancel) => {
+                                // The UI marked itself busy when it sent the
+                                // prompt; end that turn or it never clears.
+                                if !queued.is_empty() {
+                                    queued.clear();
+                                    env.emit(AgentEvent::TurnEnded {
+                                        stop_reason: CANCELLED_STOP_REASON.to_string(),
+                                    });
+                                }
+                            }
                             None => return Ok(()),
                         },
                     }

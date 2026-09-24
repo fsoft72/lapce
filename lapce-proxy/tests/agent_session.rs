@@ -349,6 +349,33 @@ fn stopping_a_ready_session_kills_the_agent_process() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn cancelling_a_prompt_queued_during_the_handshake_ends_the_turn() {
+    // An agent that never answers the handshake keeps the session Starting.
+    const SILENT_ARG: &str = "3600.4343";
+    let mut rig = Rig::new();
+    rig.manager.start(
+        AgentServerConfig {
+            command: "sleep".to_string(),
+            args: vec![SILENT_ARG.to_string()],
+            env: Default::default(),
+        },
+        Some(PathBuf::from("/mock")),
+    );
+    rig.manager.prompt("go".to_string(), vec![]);
+    rig.manager.cancel();
+
+    let stop_reason = rig.wait_for(|event| {
+        assert!(!is_disconnected(event), "the session must stay alive");
+        match event {
+            AgentEvent::TurnEnded { stop_reason } => Some(stop_reason.clone()),
+            _ => None,
+        }
+    });
+    assert_eq!(stop_reason, "Cancelled");
+}
+
 #[test]
 fn write_outside_the_workspace_is_refused_by_the_path_guard() {
     let mut rig = Rig::new();

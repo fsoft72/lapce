@@ -1,6 +1,7 @@
 //! UI state of the AI agent panel.
 
 use std::{
+    collections::VecDeque,
     hash::{Hash, Hasher},
     path::Path,
     rc::Rc,
@@ -73,10 +74,13 @@ pub struct AgentState {
     pub items: im::Vector<AgentItem>,
     pub status: AgentStatus,
     pub busy: bool,
-    pub pending: Option<PendingPermission>,
+    /// Permission requests waiting for a decision, oldest first. Only the
+    /// first one is shown; answering it reveals the next.
+    pub pending: VecDeque<PendingPermission>,
 }
 
 impl Default for AgentState {
+    /// An empty transcript with no agent running.
     fn default() -> Self {
         Self {
             items: im::Vector::new(),
@@ -84,7 +88,7 @@ impl Default for AgentState {
                 reason: "not started".to_string(),
             },
             busy: false,
-            pending: None,
+            pending: VecDeque::new(),
         }
     }
 }
@@ -96,9 +100,22 @@ impl AgentState {
         self.busy = true;
     }
 
-    /// Removes and returns the pending permission request, if any.
+    /// Removes and returns the permission request currently shown, if any.
     pub fn take_pending(&mut self) -> Option<PendingPermission> {
-        self.pending.take()
+        self.pending.pop_front()
+    }
+
+    /// The permission request currently shown, if any.
+    pub fn current_permission(&self) -> Option<&PendingPermission> {
+        self.pending.front()
+    }
+
+    /// Forgets the running turn: the agent is no longer busy and every
+    /// pending permission request is dropped. Used when the turn ends and
+    /// when the session is replaced, whose events will never arrive.
+    pub fn reset_turn(&mut self) {
+        self.busy = false;
+        self.pending.clear();
     }
 
     /// Appends streamed text to the last item when it has the same kind,
@@ -164,7 +181,7 @@ impl AgentState {
                 title,
                 options,
             } => {
-                self.pending = Some(PendingPermission {
+                self.pending.push_back(PendingPermission {
                     request_id: *request_id,
                     title: title.clone(),
                     options: options.clone(),
@@ -173,17 +190,13 @@ impl AgentState {
             AgentEvent::Status { status } => {
                 self.status = status.clone();
                 if let AgentStatus::Disconnected { reason } = status {
-                    self.busy = false;
-                    self.pending = None;
+                    self.reset_turn();
                     self.items.push_back(AgentItem::Error(format!(
                         "Agent disconnected: {reason}"
                     )));
                 }
             }
-            AgentEvent::TurnEnded { .. } => {
-                self.busy = false;
-                self.pending = None;
-            }
+            AgentEvent::TurnEnded { .. } => self.reset_turn(),
             AgentEvent::Error { message } => {
                 self.busy = false;
                 self.items.push_back(AgentItem::Error(message.clone()));
@@ -283,7 +296,10 @@ impl AgentData {
     }
 
     /// Starts the configured agent server. Reports configuration problems in the transcript.
+    /// The running turn is forgotten first: the replaced session is silenced,
+    /// so its `TurnEnded` would never arrive and the panel would stay busy.
     pub fn restart(&self) {
+        self.state.update(|state| state.reset_turn());
         match self.common.config.get_untracked().agent.resolve() {
             Ok(config) => self.common.proxy.agent_start(config),
             Err(message) => self.handle_event(AgentEvent::Error { message }),
@@ -455,14 +471,14 @@ mod tests {
             title: "Edit".into(),
             options: vec![],
         });
-        assert!(state.pending.is_some());
+        assert!(!state.pending.is_empty());
         state.apply(&AgentEvent::Status {
             status: AgentStatus::Disconnected {
                 reason: "exit 1".into(),
             },
         });
         assert!(!state.busy);
-        assert!(state.pending.is_none());
+        assert!(state.pending.is_empty());
         assert!(matches!(
             state.items.back(),
             Some(AgentItem::Error(message)) if message.contains("exit 1")
@@ -493,5 +509,83 @@ mod tests {
         });
         assert_eq!(state.take_pending().unwrap().request_id, 4);
         assert!(state.take_pending().is_none());
+    }
+
+    /// Queues a permission request with the given id.
+    fn request_permission(state: &mut AgentState, request_id: AgentRequestId) {
+        state.apply(&AgentEvent::PermissionRequest {
+            request_id,
+            title: format!("Request {request_id}"),
+            options: vec![],
+        });
+    }
+
+    #[test]
+    fn reset_turn_clears_busy_and_every_pending_permission() {
+        let mut state = AgentState::default();
+        state.push_user("hi");
+        request_permission(&mut state, 1);
+        request_permission(&mut state, 2);
+        state.reset_turn();
+        assert!(!state.busy);
+        assert!(state.pending.is_empty());
+    }
+
+    #[test]
+    fn a_new_session_status_after_reset_lets_the_user_send_again() {
+        // Restart during a turn: the replaced session never sends TurnEnded,
+        // so only the reset done by restart can clear `busy`.
+        let mut state = AgentState::default();
+        state.push_user("hi");
+        request_permission(&mut state, 1);
+        state.reset_turn();
+        state.apply(&AgentEvent::Status {
+            status: AgentStatus::Starting,
+        });
+        state.apply(&AgentEvent::Status {
+            status: AgentStatus::Ready,
+        });
+        assert!(!state.busy);
+        assert!(state.current_permission().is_none());
+        state.push_user("again");
+        assert!(state.busy);
+    }
+
+    #[test]
+    fn cancelling_a_prompt_queued_while_starting_ends_the_turn() {
+        // The proxy reports a dropped queued prompt as a cancelled turn.
+        let mut state = AgentState::default();
+        state.apply(&AgentEvent::Status {
+            status: AgentStatus::Starting,
+        });
+        state.push_user("hi");
+        state.apply(&AgentEvent::TurnEnded {
+            stop_reason: "Cancelled".into(),
+        });
+        assert!(!state.busy);
+    }
+
+    #[test]
+    fn permission_requests_queue_and_are_answered_in_order() {
+        let mut state = AgentState::default();
+        request_permission(&mut state, 1);
+        request_permission(&mut state, 2);
+        assert_eq!(state.current_permission().unwrap().request_id, 1);
+        assert_eq!(state.take_pending().unwrap().request_id, 1);
+        assert_eq!(state.current_permission().unwrap().request_id, 2);
+        assert_eq!(state.take_pending().unwrap().request_id, 2);
+        assert!(state.take_pending().is_none());
+    }
+
+    #[test]
+    fn turn_end_clears_the_permission_queue() {
+        let mut state = AgentState::default();
+        state.push_user("hi");
+        request_permission(&mut state, 1);
+        request_permission(&mut state, 2);
+        state.apply(&AgentEvent::TurnEnded {
+            stop_reason: "EndTurn".into(),
+        });
+        assert!(state.pending.is_empty());
     }
 }
