@@ -77,6 +77,7 @@ fn item_view(window_tab_data: Rc<WindowTabData>, item: AgentItem) -> impl View {
             ("Tool", format!("[{mark}] {title}"))
         }
         AgentItem::Error(text) => ("Error", text.clone()),
+        AgentItem::Note(text) => ("Note", text.clone()),
     };
     stack((
         label(move || prefix.to_string()).style(move |s| {

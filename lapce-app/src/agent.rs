@@ -45,6 +45,8 @@ pub enum AgentItem {
         status: AgentToolStatus,
     },
     Error(String),
+    /// Information from Lapce itself, such as an agent edit left unsaved.
+    Note(String),
 }
 
 impl AgentItem {
@@ -60,8 +62,43 @@ impl AgentItem {
                 (3u8, id, title, *status as u8).hash(&mut hasher)
             }
             AgentItem::Error(text) => (4u8, text).hash(&mut hasher),
+            AgentItem::Note(text) => (5u8, text).hash(&mut hasher),
         }
         hasher.finish()
+    }
+}
+
+/// What to do with an agent write to an open document.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentEditPlan {
+    /// The document already has the content.
+    Skip,
+    /// The document is read-only: nothing changes and the user is told.
+    Refuse,
+    /// Apply the edit, then save it: the document had no unsaved changes,
+    /// so the disk (which the agent's own tools read) matches the buffer.
+    ApplyAndSave,
+    /// Apply the edit but leave it unsaved, so the user's own unsaved
+    /// changes are not written without their consent.
+    ApplyUnsaved,
+}
+
+/// Decides how to apply an agent write to an open document.
+pub fn plan_agent_edit(
+    read_only: bool,
+    unchanged: bool,
+    pristine: bool,
+) -> AgentEditPlan {
+    if read_only {
+        return AgentEditPlan::Refuse;
+    }
+    if unchanged {
+        return AgentEditPlan::Skip;
+    }
+    if pristine {
+        AgentEditPlan::ApplyAndSave
+    } else {
+        AgentEditPlan::ApplyUnsaved
     }
 }
 
@@ -113,6 +150,21 @@ impl AgentState {
     /// The permission request currently shown, if any.
     pub fn current_permission(&self) -> Option<&PendingPermission> {
         self.pending.front()
+    }
+
+    /// Adds an error to the transcript without ending the turn.
+    pub fn push_error(&mut self, message: String) {
+        self.items.push_back(AgentItem::Error(message));
+    }
+
+    /// Tells the user an agent edit to `path` was left unsaved because the
+    /// document already had unsaved changes.
+    pub fn note_unsaved_edit(&mut self, path: &Path) {
+        self.items.push_back(AgentItem::Note(format!(
+            "The agent edited {}, which has unsaved changes: its edit is not saved \
+             either, so the agent's own tools still see the file on disk.",
+            path.display()
+        )));
     }
 
     /// Forgets the running turn: the agent is no longer busy and every
@@ -245,22 +297,52 @@ impl AgentData {
     }
 
     /// Replaces the whole content of an open document as one undoable edit.
-    /// Does nothing if the document is not open or the text is unchanged.
+    /// The edit is saved when the document had no unsaved changes, so the
+    /// disk matches what the agent was told it wrote; otherwise it is left
+    /// unsaved and a note says so. A document that is missing or read-only
+    /// is reported as an error.
     pub fn apply_edit(&self, path: &Path, content: &str) {
         let Some(doc) = self
             .main_split
             .docs
             .with_untracked(|docs| docs.get(path).cloned())
         else {
-            return;
+            return self.report_edit_error(path, "the file is not open");
         };
-        let (len, same) = doc
+        let read_only = doc.content.with_untracked(|content| content.read_only());
+        let (len, unchanged) = doc
             .buffer
             .with_untracked(|buffer| (buffer.len(), buffer.to_string() == content));
-        if same {
-            return;
+        match plan_agent_edit(read_only, unchanged, doc.is_pristine()) {
+            AgentEditPlan::Skip => {}
+            AgentEditPlan::Refuse => {
+                self.report_edit_error(path, "the file is read-only");
+            }
+            AgentEditPlan::ApplyAndSave => {
+                doc.do_raw_edit(
+                    &[(Selection::region(0, len), content)],
+                    EditType::Other,
+                );
+                doc.save(|| {});
+            }
+            AgentEditPlan::ApplyUnsaved => {
+                doc.do_raw_edit(
+                    &[(Selection::region(0, len), content)],
+                    EditType::Other,
+                );
+                self.state.update(|state| state.note_unsaved_edit(path));
+            }
         }
-        doc.do_raw_edit(&[(Selection::region(0, len), content)], EditType::Other);
+    }
+
+    /// Logs and shows an agent edit that could not be applied to `path`.
+    fn report_edit_error(&self, path: &Path, reason: &str) {
+        let message = format!(
+            "The agent's edit to {} was not applied: {reason}",
+            path.display()
+        );
+        tracing::error!("{message}");
+        self.state.update(|state| state.push_error(message));
     }
 
     /// Reads and clears the input box. Returns `None` when it only has whitespace.
@@ -608,5 +690,37 @@ mod tests {
             stop_reason: "EndTurn".into(),
         });
         assert!(state.pending.is_empty());
+    }
+
+    #[test]
+    fn agent_edit_plan_saves_only_documents_without_unsaved_changes() {
+        assert_eq!(
+            plan_agent_edit(false, false, true),
+            AgentEditPlan::ApplyAndSave
+        );
+        assert_eq!(
+            plan_agent_edit(false, false, false),
+            AgentEditPlan::ApplyUnsaved
+        );
+        assert_eq!(plan_agent_edit(false, true, false), AgentEditPlan::Skip);
+    }
+
+    #[test]
+    fn agent_edit_plan_refuses_read_only_documents() {
+        assert_eq!(plan_agent_edit(true, false, true), AgentEditPlan::Refuse);
+        assert_eq!(plan_agent_edit(true, true, true), AgentEditPlan::Refuse);
+    }
+
+    #[test]
+    fn an_unsaved_edit_note_names_the_file_and_keeps_the_turn_running() {
+        let mut state = AgentState::default();
+        state.push_user("hi");
+        state.note_unsaved_edit(Path::new("/ws/src/main.rs"));
+        state.push_error("boom".to_string());
+        assert!(state.busy, "notes and edit errors do not end the turn");
+        assert!(matches!(
+            &state.items[1],
+            AgentItem::Note(text) if text.contains("/ws/src/main.rs")
+        ));
     }
 }

@@ -63,6 +63,8 @@ pub struct Dispatcher {
     window_id: usize,
     tab_id: usize,
     agent: crate::agent::AgentManager,
+    /// Agent writes to open files not yet applied by the UI.
+    agent_writes: crate::agent::fs::PendingWrites,
 }
 
 impl ProxyHandler for Dispatcher {
@@ -140,6 +142,7 @@ impl ProxyHandler for Dispatcher {
                     }
                 } else {
                     self.buffers.remove(&path);
+                    self.agent_writes.remove(&path);
                     self.core_rpc.open_file_changed(path, FileChanged::Delete);
                 }
             }
@@ -186,6 +189,11 @@ impl ProxyHandler for Dispatcher {
                 let buffer = self.buffers.get_mut(&path).unwrap();
                 let old_text = buffer.rope.clone();
                 buffer.update(&delta, rev);
+                crate::agent::fs::settle_pending_write(
+                    &mut self.agent_writes,
+                    &path,
+                    &buffer.rope,
+                );
                 self.catalog_rpc.did_change_text_document(
                     &path,
                     rev,
@@ -439,17 +447,22 @@ impl ProxyHandler for Dispatcher {
                 );
             }
             AgentReadFile { path } => {
-                let result = crate::agent::fs::read_text(&self.buffers, &path)
-                    .map(|content| ProxyResponse::AgentReadFileResponse { content })
-                    .map_err(|err| RpcError {
-                        code: 0,
-                        message: format!("{err:#}"),
-                    });
+                let result = crate::agent::fs::read_text(
+                    &self.buffers,
+                    &self.agent_writes,
+                    &path,
+                )
+                .map(|content| ProxyResponse::AgentReadFileResponse { content })
+                .map_err(|err| RpcError {
+                    code: 0,
+                    message: format!("{err:#}"),
+                });
                 self.respond_rpc(id, result);
             }
             AgentWriteFile { path, content } => {
                 let result = crate::agent::fs::write_text(
                     &self.buffers,
+                    &mut self.agent_writes,
                     &self.core_rpc,
                     &path,
                     &content,
@@ -1272,6 +1285,7 @@ impl Dispatcher {
             window_id: 1,
             tab_id: 1,
             agent,
+            agent_writes: Default::default(),
         }
     }
 
