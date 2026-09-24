@@ -467,7 +467,8 @@ impl KeyPressFocus for AgentData {
         matches!(condition, Condition::PanelFocus)
     }
 
-    /// Forwards editing commands to the input box; Enter sends the prompt.
+    /// Forwards editing commands to the input box; Enter sends the prompt and
+    /// Shift+Enter inserts a new line.
     fn run_command(
         &self,
         command: &LapceCommand,
@@ -483,7 +484,9 @@ impl KeyPressFocus for AgentData {
             | CommandKind::MultiSelection(_) => {
                 #[allow(clippy::single_match)]
                 match command.kind {
-                    CommandKind::Edit(EditCommand::InsertNewLine) => {
+                    CommandKind::Edit(EditCommand::InsertNewLine)
+                        if !mods.shift() =>
+                    {
                         self.send_input();
                         return CommandExecuted::Yes;
                     }
