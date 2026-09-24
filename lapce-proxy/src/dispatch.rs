@@ -421,6 +421,29 @@ impl ProxyHandler for Dispatcher {
                     Ok(ProxyResponse::NewBufferResponse { content, read_only }),
                 );
             }
+            AgentReadFile { path } => {
+                let result = crate::agent::fs::read_text(&self.buffers, &path)
+                    .map(|content| ProxyResponse::AgentReadFileResponse { content })
+                    .map_err(|err| RpcError {
+                        code: 0,
+                        message: format!("{err:#}"),
+                    });
+                self.respond_rpc(id, result);
+            }
+            AgentWriteFile { path, content } => {
+                let result = crate::agent::fs::write_text(
+                    &self.buffers,
+                    &self.core_rpc,
+                    &path,
+                    &content,
+                )
+                .map(|()| ProxyResponse::Success {})
+                .map_err(|err| RpcError {
+                    code: 0,
+                    message: format!("{err:#}"),
+                });
+                self.respond_rpc(id, result);
+            }
             BufferHead { path } => {
                 let result = if let Some(workspace) = self.workspace.as_ref() {
                     let result = file_get_head(workspace, &path);

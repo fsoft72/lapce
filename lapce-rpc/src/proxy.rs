@@ -220,6 +220,15 @@ pub enum ProxyRequest {
     ReferencesResolve {
         items: Vec<Location>,
     },
+    /// Read a text file for the agent (unsaved buffer content wins over disk).
+    AgentReadFile {
+        path: PathBuf,
+    },
+    /// Write a text file for the agent (open files are edited through the UI).
+    AgentWriteFile {
+        path: PathBuf,
+        content: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -468,6 +477,9 @@ pub enum ProxyResponse {
     ReferencesResolveResponse {
         items: Vec<FileLine>,
     },
+    AgentReadFileResponse {
+        content: String,
+    },
 }
 
 pub type ProxyMessage = RpcMessage<ProxyRequest, ProxyNotification, ProxyResponse>;
@@ -574,6 +586,34 @@ impl ProxyRpcHandler {
         f: impl ProxyCallback + 'static,
     ) {
         self.request_common(request, ResponseHandler::Callback(Box::new(f)))
+    }
+
+    /// Blocking read of a text file for the agent. Must not be called from the
+    /// dispatcher thread, which is the one that answers it.
+    pub fn agent_read_file(&self, path: PathBuf) -> Result<String, RpcError> {
+        match self.request(ProxyRequest::AgentReadFile { path })? {
+            ProxyResponse::AgentReadFileResponse { content } => Ok(content),
+            _ => Err(RpcError {
+                code: 0,
+                message: "unexpected response to AgentReadFile".to_string(),
+            }),
+        }
+    }
+
+    /// Blocking write of a text file for the agent. Must not be called from the
+    /// dispatcher thread, which is the one that answers it.
+    pub fn agent_write_file(
+        &self,
+        path: PathBuf,
+        content: String,
+    ) -> Result<(), RpcError> {
+        match self.request(ProxyRequest::AgentWriteFile { path, content })? {
+            ProxyResponse::Success {} => Ok(()),
+            _ => Err(RpcError {
+                code: 0,
+                message: "unexpected response to AgentWriteFile".to_string(),
+            }),
+        }
     }
 
     pub fn handle_response(

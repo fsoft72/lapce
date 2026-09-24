@@ -146,6 +146,12 @@ pub enum CoreNotification {
         path: PathBuf,
         breakpoints: Vec<dap_types::Breakpoint>,
     },
+    /// The agent wrote a file that is open in the editor: apply the new content
+    /// to the buffer as a single undoable edit.
+    AgentApplyEdit {
+        path: PathBuf,
+        content: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
