@@ -30,3 +30,5 @@
 - Added the Agent panel (right side by default) with transcript, permission prompt and input, plus toggle_agent_visual and toggle_agent_focus commands.
 - Agent server settings (`[agent]`) are now read only from the user settings file; a workspace `.lapce/settings.toml` cannot change the command Lapce launches.
 - Added a regression test that the agent process is killed when a ready session is stopped; security review of the agent surface done, spec marked implemented (manual tests with real agents pending).
+- Final review fixes: restart/cancel never leave the panel busy, permission prompts queue, agent edits to clean open files are saved (dirty ones get a note, read-only ones an error), reads see pending agent writes, and the agent process tree is killed synchronously on stop and on window/app exit.
+- The agent command is resolved with PATHEXT on Windows (`npx` -> `npx.cmd`), errors name the command line and the agent's stderr, the status label is readable, and session errors are logged.

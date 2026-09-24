@@ -1,5 +1,7 @@
 //! Mock ACP agent used by the integration tests. On every prompt it streams a
 //! message, asks for permission, writes `/mock/out.txt` if allowed, then ends the turn.
+//! If the permission request is cancelled it streams `permission cancelled` and
+//! ends the turn with the `Cancelled` stop reason.
 
 use agent_client_protocol::{
     Agent, Result, Stdio,
@@ -67,6 +69,24 @@ fn main() -> Result<()> {
                             ))
                             .block_task()
                             .await?;
+                        if matches!(
+                            permission.outcome,
+                            RequestPermissionOutcome::Cancelled
+                        ) {
+                            connection.send_notification(
+                                SessionNotification::new(
+                                    session_id.clone(),
+                                    SessionUpdate::AgentMessageChunk(
+                                        ContentChunk::new(ContentBlock::Text(
+                                            TextContent::new("permission cancelled"),
+                                        )),
+                                    ),
+                                ),
+                            )?;
+                            return responder.respond(PromptResponse::new(
+                                StopReason::Cancelled,
+                            ));
+                        }
                         let allowed = matches!(
                             permission.outcome,
                             RequestPermissionOutcome::Selected(ref selected)

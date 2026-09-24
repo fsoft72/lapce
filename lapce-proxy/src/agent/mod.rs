@@ -104,7 +104,12 @@ impl AgentManager {
                 let reason = match result {
                     _ if env.process.was_killed() => "stopped".to_string(),
                     Ok(()) => "session closed".to_string(),
-                    Err(err) => format!("`{command_line}` failed: {err}"),
+                    Err(err) => {
+                        tracing::error!(
+                            "agent session `{command_line}` ended with an error: {err}"
+                        );
+                        format!("`{command_line}` failed: {err}")
+                    }
                 };
                 // Gated like every other session event: a session replaced by
                 // a restart stays silent, a stopped one reports.

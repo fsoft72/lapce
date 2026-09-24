@@ -216,6 +216,42 @@ fn rejected_permission_prevents_the_write() {
 }
 
 #[test]
+fn cancelling_with_a_pending_permission_cancels_it_and_ends_the_turn() {
+    let mut rig = Rig::new();
+    rig.manager
+        .start(mock_config(), Some(PathBuf::from("/mock")));
+    rig.manager.prompt("go".to_string(), vec![]);
+    let request_id = rig.wait_for(|event| match event {
+        AgentEvent::PermissionRequest { request_id, .. } => Some(*request_id),
+        _ => None,
+    });
+
+    rig.manager.cancel();
+
+    // The mock reports the cancelled outcome it received, then ends the turn.
+    let mut agent_saw_cancelled = false;
+    let stop_reason = rig.wait_for(|event| {
+        assert!(!is_disconnected(event), "cancel must not end the session");
+        match event {
+            AgentEvent::MessageChunk { text } if text == "permission cancelled" => {
+                agent_saw_cancelled = true;
+                None
+            }
+            AgentEvent::TurnEnded { stop_reason } => Some(stop_reason.clone()),
+            AgentEvent::Error { message } => panic!("unexpected error: {message}"),
+            _ => None,
+        }
+    });
+    assert!(agent_saw_cancelled, "the agent did not receive Cancelled");
+    assert_eq!(stop_reason, "Cancelled");
+    // The request was answered as cancelled, so a late click does nothing.
+    rig.manager
+        .permission_reply(request_id, Some("allow".to_string()));
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(rig.writes.lock().is_empty());
+}
+
+#[test]
 fn stopping_with_a_pending_permission_does_not_hang_the_agent() {
     let mut rig = Rig::new();
     rig.manager

@@ -282,7 +282,13 @@ async fn connect(
                 async move |req: ReadTextFileRequest, responder, _cx| {
                     match env.read_file(&req) {
                         Ok(content) => responder.respond(ReadTextFileResponse::new(content)),
-                        Err(err) => responder.respond_with_error(to_acp_error(err)),
+                        Err(err) => {
+                            tracing::warn!(
+                                "agent read of {} refused: {err:#}",
+                                req.path.display()
+                            );
+                            responder.respond_with_error(to_acp_error(err))
+                        }
                     }
                 }
             },
@@ -294,7 +300,13 @@ async fn connect(
                 async move |req: WriteTextFileRequest, responder, _cx| {
                     match env.write_file(&req) {
                         Ok(()) => responder.respond(WriteTextFileResponse::new()),
-                        Err(err) => responder.respond_with_error(to_acp_error(err)),
+                        Err(err) => {
+                            tracing::warn!(
+                                "agent write of {} refused: {err:#}",
+                                req.path.display()
+                            );
+                            responder.respond_with_error(to_acp_error(err))
+                        }
                     }
                 }
             },
@@ -414,9 +426,12 @@ async fn connect(
                         Ok(stop) => AgentEvent::TurnEnded {
                             stop_reason: format!("{stop:?}"),
                         },
-                        Err(err) => AgentEvent::Error {
-                            message: format!("Prompt failed: {err}"),
-                        },
+                        Err(err) => {
+                            tracing::error!("agent prompt failed: {err}");
+                            AgentEvent::Error {
+                                message: format!("Prompt failed: {err}"),
+                            }
+                        }
                     };
                     env.emit(event);
                 }

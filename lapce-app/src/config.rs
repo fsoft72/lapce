@@ -255,6 +255,10 @@ impl LapceConfig {
         }
     }
 
+    /// Layers the settings sources over the built-in defaults, later ones
+    /// winning: the color theme (over the default dark theme), the icon
+    /// theme, then the user and workspace settings files. A source that fails
+    /// to parse is skipped and the layers below it are kept.
     fn merge_config_from(
         user_settings: Option<&Path>,
         workspace_settings: Option<&Path>,
