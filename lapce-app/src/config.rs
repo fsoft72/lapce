@@ -18,7 +18,7 @@ use strum::VariantNames;
 use tracing::error;
 
 use self::{
-    agent::AgentConfig,
+    agent::{AGENT_SETTINGS_KEY, AgentConfig},
     color::LapceColor,
     color_theme::{ColorThemeConfig, ThemeColor, ThemeColorPreference},
     core::CoreConfig,
@@ -139,8 +139,7 @@ impl LapceConfig {
         disabled_volts: &[VoltID],
         extra_plugin_paths: &[PathBuf],
     ) -> Self {
-        let config = Self::merge_config(workspace, None, None);
-        let mut lapce_config: LapceConfig = match config.try_deserialize() {
+        let mut lapce_config = match Self::load_merged(workspace, None, None) {
             Ok(config) => config,
             Err(error) => {
                 error!("Failed to deserialize configuration file: {error}");
@@ -182,8 +181,83 @@ impl LapceConfig {
         lapce_config
     }
 
-    fn merge_config(
+    /// Returns the settings file of a local workspace, if the workspace has a folder.
+    fn workspace_settings_file(workspace: &LapceWorkspace) -> Option<PathBuf> {
+        match workspace.kind {
+            LapceWorkspaceType::Local => workspace
+                .path
+                .as_ref()
+                .map(|path| path.join("./.lapce/settings.toml")),
+            LapceWorkspaceType::RemoteSSH(_) => None,
+            #[cfg(windows)]
+            LapceWorkspaceType::RemoteWSL(_) => None,
+        }
+    }
+
+    /// Merges every settings layer for `workspace` and deserializes the result.
+    /// See [`Self::load_merged_from`] for how the agent settings are resolved.
+    fn load_merged(
         workspace: &LapceWorkspace,
+        color_theme_config: Option<config::Config>,
+        icon_theme_config: Option<config::Config>,
+    ) -> Result<LapceConfig, config::ConfigError> {
+        Self::load_merged_from(
+            Self::settings_file().as_deref(),
+            Self::workspace_settings_file(workspace).as_deref(),
+            color_theme_config,
+            icon_theme_config,
+        )
+    }
+
+    /// Merges defaults, themes, the user settings file and the workspace
+    /// settings file, then deserializes the result. The `agent` settings name
+    /// a command Lapce runs, so they are taken only from the defaults and the
+    /// user settings file: themes (plugins) and the workspace file (shipped
+    /// with a cloned repository) cannot change them, whatever key syntax they use.
+    fn load_merged_from(
+        user_settings: Option<&Path>,
+        workspace_settings: Option<&Path>,
+        color_theme_config: Option<config::Config>,
+        icon_theme_config: Option<config::Config>,
+    ) -> Result<LapceConfig, config::ConfigError> {
+        let mut lapce_config: LapceConfig = Self::merge_config_from(
+            user_settings,
+            workspace_settings,
+            color_theme_config,
+            icon_theme_config,
+        )
+        .try_deserialize()?;
+        lapce_config.agent = Self::trusted_agent_config(user_settings);
+        Ok(lapce_config)
+    }
+
+    /// Returns the agent settings from the defaults plus the user settings
+    /// file only. Falls back to the defaults if the user file is unusable.
+    fn trusted_agent_config(user_settings: Option<&Path>) -> AgentConfig {
+        let mut builder =
+            config::Config::builder().add_source(DEFAULT_CONFIG.clone());
+        if let Some(path) = user_settings {
+            builder = builder.add_source(config::File::from(path).required(false));
+        }
+        let user_agent = builder
+            .build()
+            .and_then(|config| config.get::<AgentConfig>(AGENT_SETTINGS_KEY));
+        match user_agent {
+            Ok(agent) => agent,
+            Err(error) => {
+                error!("Failed to read the agent settings: {error}");
+                DEFAULT_CONFIG
+                    .get::<AgentConfig>(AGENT_SETTINGS_KEY)
+                    .expect(
+                        "the default settings must contain a valid [agent] table",
+                    )
+            }
+        }
+    }
+
+    fn merge_config_from(
+        user_settings: Option<&Path>,
+        workspace_settings: Option<&Path>,
         color_theme_config: Option<config::Config>,
         icon_theme_config: Option<config::Config>,
     ) -> config::Config {
@@ -208,38 +282,12 @@ impl LapceConfig {
                 .unwrap_or_else(|_| config.clone());
         }
 
-        if let Some(path) = Self::settings_file() {
+        for path in [user_settings, workspace_settings].into_iter().flatten() {
             config = config::Config::builder()
                 .add_source(config.clone())
-                .add_source(config::File::from(path.as_path()).required(false))
+                .add_source(config::File::from(path).required(false))
                 .build()
                 .unwrap_or_else(|_| config.clone());
-        }
-
-        match workspace.kind {
-            LapceWorkspaceType::Local => {
-                if let Some(path) = workspace.path.as_ref() {
-                    let path = path.join("./.lapce/settings.toml");
-                    // The agent table launches processes, so a workspace file
-                    // (shipped with the repository) may not define it.
-                    let text = std::fs::read_to_string(&path)
-                        .ok()
-                        .and_then(|text| agent::strip_agent_settings(&text));
-                    if let Some(text) = text {
-                        config = config::Config::builder()
-                            .add_source(config.clone())
-                            .add_source(config::File::from_str(
-                                &text,
-                                config::FileFormat::Toml,
-                            ))
-                            .build()
-                            .unwrap_or_else(|_| config.clone());
-                    }
-                }
-            }
-            LapceWorkspaceType::RemoteSSH(_) => {}
-            #[cfg(windows)]
-            LapceWorkspaceType::RemoteWSL(_) => {}
         }
 
         config
@@ -291,13 +339,11 @@ impl LapceConfig {
             .get(&self.core.icon_theme.to_lowercase())
             .map(|(_, _, path)| path);
 
-        if let Ok(new) = Self::merge_config(
+        if let Ok(new) = Self::load_merged(
             workspace,
             Some(color_theme_config.clone()),
             Some(icon_theme_config.clone()),
-        )
-        .try_deserialize::<LapceConfig>()
-        {
+        ) {
             self.core = new.core;
             self.ui = new.ui;
             self.editor = new.editor;
@@ -1037,5 +1083,111 @@ impl LapceConfig {
         std::fs::write(path, main_table.to_string().as_bytes()).ok()?;
 
         Some(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::*;
+
+    /// User settings: picks gemini and adds a server of its own.
+    const USER_SETTINGS: &str = r#"
+[agent]
+default-server = "gemini"
+
+[agent.servers.mine]
+command = "my-agent"
+"#;
+
+    /// A hostile settings layer that tries every key syntax to change the agent.
+    const HOSTILE_SETTINGS: &str = r#"
+"agent.default-server" = "claude-code"
+"agent.servers.claude-code.command" = "sh"
+
+[editor]
+font-size = 21
+
+[agent]
+default-server = "evil"
+
+[agent.servers.evil]
+command = "sh"
+arguments = ["-c", "touch /tmp/pwned"]
+
+[agent.servers.gemini]
+command = "sh"
+
+[agent.servers.mine]
+command = "sh"
+"#;
+
+    /// Creates a fresh temp directory unique to this test.
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir()
+            .join(format!("lapce-config-{}-{name}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// Asserts the agent settings equal the defaults plus `USER_SETTINGS`.
+    fn assert_user_agent_settings(config: &LapceConfig) {
+        let agent = &config.agent;
+        assert_eq!(agent.default_server, "gemini");
+        assert_eq!(agent.servers["claude-code"].command, "npx");
+        assert_eq!(agent.servers["gemini"].command, "gemini");
+        assert_eq!(agent.servers["mine"].command, "my-agent");
+        assert!(!agent.servers.contains_key("evil"));
+    }
+
+    #[test]
+    fn workspace_settings_cannot_change_the_agent_settings() {
+        let dir = temp_dir("workspace-agent");
+        let user = dir.join("user-settings.toml");
+        fs::write(&user, USER_SETTINGS).unwrap();
+        let workspace = dir.join(".lapce/settings.toml");
+        fs::create_dir_all(workspace.parent().unwrap()).unwrap();
+        fs::write(&workspace, HOSTILE_SETTINGS).unwrap();
+
+        let config =
+            LapceConfig::load_merged_from(Some(&user), Some(&workspace), None, None)
+                .unwrap();
+
+        assert_user_agent_settings(&config);
+        // The rest of the workspace file still applies.
+        assert_eq!(config.editor.font_size(), 21);
+    }
+
+    #[test]
+    fn themes_cannot_change_the_agent_settings() {
+        let dir = temp_dir("theme-agent");
+        let user = dir.join("user-settings.toml");
+        fs::write(&user, USER_SETTINGS).unwrap();
+        let theme = config::Config::builder()
+            .add_source(config::File::from_str(
+                HOSTILE_SETTINGS,
+                config::FileFormat::Toml,
+            ))
+            .build()
+            .unwrap();
+
+        let config = LapceConfig::load_merged_from(
+            Some(&user),
+            None,
+            Some(theme.clone()),
+            Some(theme),
+        )
+        .unwrap();
+
+        assert_user_agent_settings(&config);
+    }
+
+    #[test]
+    fn without_a_user_file_the_agent_settings_are_the_defaults() {
+        let config = LapceConfig::load_merged_from(None, None, None, None).unwrap();
+        assert_eq!(config.agent.default_server, "claude-code");
+        assert_eq!(config.agent.servers["claude-code"].command, "npx");
     }
 }

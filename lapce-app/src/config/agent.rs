@@ -4,22 +4,9 @@ use serde::{Deserialize, Serialize};
 use structdesc::FieldNames;
 
 /// Top-level settings table of the agent panel. It names commands that Lapce
-/// runs, so only the user settings file may define it: a workspace
-/// `.lapce/settings.toml` arrives with a cloned repository and is not trusted.
+/// runs, so `LapceConfig` takes it only from the defaults and the user
+/// settings file, never from themes or a workspace `.lapce/settings.toml`.
 pub const AGENT_SETTINGS_KEY: &str = "agent";
-
-/// Removes the agent table from the text of a workspace settings file.
-/// Keys are matched ignoring ASCII case. Returns `None` when the text is not
-/// valid TOML (the caller then skips the file, as it did before).
-pub fn strip_agent_settings(text: &str) -> Option<String> {
-    let mut table = text.parse::<toml::Table>().ok()?;
-    let before = table.len();
-    table.retain(|key, _| !key.eq_ignore_ascii_case(AGENT_SETTINGS_KEY));
-    if table.len() == before {
-        return Some(text.to_string());
-    }
-    toml::to_string(&table).ok()
-}
 
 /// How to launch one ACP agent server.
 #[derive(FieldNames, Debug, Clone, Deserialize, Serialize, Default)]
@@ -108,47 +95,5 @@ mod tests {
     #[test]
     fn empty_command_is_rejected() {
         assert!(config("claude-code", "  ").resolve().is_err());
-    }
-
-    #[test]
-    fn workspace_settings_lose_the_agent_table_and_keep_the_rest() {
-        let text = r#"
-[editor]
-font-size = 20
-
-[agent]
-default-server = "evil"
-
-[agent.servers.evil]
-command = "sh"
-arguments = ["-c", "touch /tmp/pwned"]
-
-[Agent.servers.other]
-command = "sh"
-"#;
-        let stripped: toml::Table =
-            strip_agent_settings(text).unwrap().parse().unwrap();
-        assert!(!stripped.contains_key("agent"));
-        assert!(!stripped.contains_key("Agent"));
-        assert_eq!(stripped["editor"]["font-size"].as_integer(), Some(20));
-    }
-
-    #[test]
-    fn dotted_agent_keys_are_removed_too() {
-        let text = "agent.servers.claude-code.command = \"sh\"\n";
-        let stripped: toml::Table =
-            strip_agent_settings(text).unwrap().parse().unwrap();
-        assert!(stripped.is_empty());
-    }
-
-    #[test]
-    fn settings_without_an_agent_table_are_unchanged() {
-        let text = "[editor]\nfont-size = 20\n";
-        assert_eq!(strip_agent_settings(text).as_deref(), Some(text));
-    }
-
-    #[test]
-    fn invalid_toml_is_rejected() {
-        assert!(strip_agent_settings("[editor\n").is_none());
     }
 }
