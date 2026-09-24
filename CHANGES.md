@@ -24,3 +24,4 @@
 - Added the prompt builder that attaches selection or file context to the user message.
 - Added mapping from ACP session updates and permission requests to UI events.
 - Added ProxyRequest::AgentReadFile/AgentWriteFile and CoreNotification::AgentApplyEdit so the agent reads unsaved buffers and edits open files through the UI.
+- Added [agent] settings (default-server, servers) and the AgentState transcript model for the panel.
