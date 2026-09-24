@@ -22,3 +22,4 @@
 - Added the ACP crate to lapce-proxy and a PermissionBroker for pending agent permission requests.
 - Added the workspace path guard and line slicing used to serve agent file requests.
 - Added the prompt builder that attaches selection or file context to the user message.
+- Added mapping from ACP session updates and permission requests to UI events.
