@@ -15,3 +15,7 @@
 ## Build scripts
 
 - Added `scripts/build-release.sh` (release build copied to `bin/lapcie`) and `scripts/build-debug.sh` (debug build copied to `bin/lapcie-debug`). `bin/` is git-ignored.
+
+## AI agent panel
+
+- Added `lapce_rpc::agent` with the shared types used by the agent panel (ACP client). Spec deltas from planning are recorded in the design spec.

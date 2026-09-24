@@ -65,3 +65,13 @@ Cancel: `AgentCancel` sends `session/cancel` and rejects any pending permission.
 - Async runtime fit of the ACP crate with the proxy threading model.
 - Buffer ownership question above.
 - Panel default position (bottom vs right side).
+
+## Changes found during planning
+
+- Terminal requests are out of v1: `terminal` capability is not advertised. The agent uses its own shell tool and asks permission through `session/request_permission`.
+- ACP has no client-side gate on `fs/write_text_file`. Permission prompts come from the agent. Lapce enforces a workspace path guard on every read and write.
+- `CoreRequest` is empty and the UI has no reply path, so file writes to open buffers use a `CoreNotification::AgentApplyEdit`, reads run in the dispatcher (`ProxyRequest::AgentReadFile`), writes to closed files go to disk in the proxy (`ProxyRequest::AgentWriteFile`).
+- Resolved: the ACP crate is runtime agnostic (no tokio), so it runs on a dedicated proxy thread with `futures::executor::block_on`. The proxy holds synced buffers, but inside the single-threaded dispatcher.
+- Default panel position: right side.
+- Known limitation: right after an agent write to an open buffer, the proxy copy updates when the UI's `Update` arrives, so an immediate re-read can briefly see old text.
+- Context in v1 is the active file, or its selection when there is one. `@file` mentions and context chips are deferred. Enter sends the prompt; multi-line input is not supported yet.
