@@ -13,6 +13,7 @@ use floem::{
         Color,
         kurbo::{Line, Point, Rect, Size},
     },
+    pointer::PointerWheelEvent,
     prelude::SignalTrack,
     reactive::{
         Memo, ReadSignal, RwSignal, SignalGet, SignalUpdate, SignalWith,
@@ -56,7 +57,7 @@ use lsp_types::CodeLens;
 use super::{DocSignal, EditorData, gutter::editor_gutter_view};
 use crate::{
     app::clickable_icon,
-    command::InternalCommand,
+    command::{CommandKind, InternalCommand, LapceCommand, LapceWorkbenchCommand},
     config::{LapceConfig, color::LapceColor, editor::WrapStyle, icon::LapceIcons},
     debug::{DapData, LapceBreakpoint},
     doc::DocContent,
@@ -1919,10 +1920,16 @@ fn editor_gutter(
                     .on_resize(move |rect| {
                         gutter_rect.set(rect);
                     })
-                    .on_event_stop(EventListener::PointerWheel, move |event| {
+                    .on_event(EventListener::PointerWheel, move |event| {
                         if let Event::PointerWheel(pointer_event) = event {
-                            scroll_delta.set(pointer_event.delta);
+                            if !zoom_font_on_wheel(
+                                &e_data.get_untracked(),
+                                pointer_event,
+                            ) {
+                                scroll_delta.set(pointer_event.delta);
+                            }
                         }
+                        EventPropagation::Stop
                     })
                     .style(|s| s.size_pct(100.0, 100.0)),
                 editor_gutter_code_actions(e_data, gutter_width, icon_padding),
@@ -2051,6 +2058,30 @@ fn editor_breadcrumbs(
     .debug_name("Editor BreadCrumbs")
 }
 
+/// Changes the editor font size when the wheel is used with the zoom
+/// modifier (`Cmd` on macOS, `Ctrl` elsewhere). Returns `true` if the event
+/// was consumed and must not scroll the editor.
+fn zoom_font_on_wheel(e_data: &EditorData, event: &PointerWheelEvent) -> bool {
+    let zoom = if cfg!(target_os = "macos") {
+        event.modifiers.meta()
+    } else {
+        event.modifiers.control()
+    };
+    if !zoom || event.delta.y == 0.0 {
+        return false;
+    }
+    let command = if event.delta.y > 0.0 {
+        LapceWorkbenchCommand::EditorFontIncrease
+    } else {
+        LapceWorkbenchCommand::EditorFontDecrease
+    };
+    e_data.common.lapce_command.send(LapceCommand {
+        kind: CommandKind::Workbench(command),
+        data: None,
+    });
+    true
+}
+
 fn editor_content(
     e_data: RwSignal<EditorData>,
     debug_breakline: Memo<Option<(usize, PathBuf)>>,
@@ -2116,6 +2147,14 @@ fn editor_content(
                     id.request_active();
                     e_data.get_untracked().pointer_down(pointer_event);
                 }
+            })
+            .on_event(EventListener::PointerWheel, move |event| {
+                if let Event::PointerWheel(pointer_event) = event {
+                    if zoom_font_on_wheel(&e_data.get_untracked(), pointer_event) {
+                        return EventPropagation::Stop;
+                    }
+                }
+                EventPropagation::Continue
             })
             .on_event_stop(EventListener::PointerMove, move |event| {
                 if let Event::PointerMove(pointer_event) = event {

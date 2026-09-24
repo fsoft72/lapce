@@ -301,6 +301,18 @@ pub enum LapceWorkbenchCommand {
     #[strum(message = "Reset Zoom")]
     ZoomReset,
 
+    #[strum(serialize = "editor_font_increase")]
+    #[strum(message = "Increase Editor Font Size")]
+    EditorFontIncrease,
+
+    #[strum(serialize = "editor_font_decrease")]
+    #[strum(message = "Decrease Editor Font Size")]
+    EditorFontDecrease,
+
+    #[strum(serialize = "editor_font_reset")]
+    #[strum(message = "Reset Editor Font Size")]
+    EditorFontReset,
+
     #[strum(serialize = "close_window_tab")]
     #[strum(message = "Close Current Window Tab")]
     CloseWindowTab,

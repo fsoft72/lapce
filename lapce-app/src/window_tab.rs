@@ -60,7 +60,7 @@ use crate::{
         LapceWorkbenchCommand, WindowCommand,
     },
     completion::{CompletionData, CompletionStatus},
-    config::LapceConfig,
+    config::{LapceConfig, editor::DEFAULT_FONT_SIZE},
     db::LapceDb,
     debug::{DapData, LapceBreakpoint, RunDebugMode, RunDebugProcess},
     doc::DocContent,
@@ -713,6 +713,24 @@ impl WindowTabData {
         }
     }
 
+    /// Moves the editor font size by `delta` points and persists it.
+    fn change_editor_font_size(&self, delta: i32) {
+        let size = self
+            .common
+            .config
+            .with_untracked(|config| config.editor.stepped_font_size(delta));
+        Self::save_editor_font_size(size);
+    }
+
+    /// Writes `editor.font-size` to the user settings file.
+    fn save_editor_font_size(size: usize) {
+        LapceConfig::update_file(
+            "editor",
+            "font-size",
+            toml_edit::Value::from(size as i64),
+        );
+    }
+
     pub fn run_workbench_command(
         &self,
         cmd: LapceWorkbenchCommand,
@@ -1202,6 +1220,9 @@ impl WindowTabData {
                     toml_edit::Value::from(1.0),
                 );
             }
+            EditorFontIncrease => self.change_editor_font_size(1),
+            EditorFontDecrease => self.change_editor_font_size(-1),
+            EditorFontReset => Self::save_editor_font_size(DEFAULT_FONT_SIZE),
 
             ToggleMaximizedPanel => {
                 if let Some(data) = data {

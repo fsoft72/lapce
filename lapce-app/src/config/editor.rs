@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 use structdesc::FieldNames;
 
 pub const SCALE_OR_SIZE_LIMIT: f64 = 5.0;
+pub const MIN_FONT_SIZE: usize = 6;
+pub const MAX_FONT_SIZE: usize = 32;
+pub const DEFAULT_FONT_SIZE: usize = 13;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub enum ClickMode {
@@ -248,7 +251,14 @@ pub struct EditorConfig {
 
 impl EditorConfig {
     pub fn font_size(&self) -> usize {
-        self.font_size.clamp(6, 32)
+        self.font_size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE)
+    }
+
+    /// Returns the font size obtained by moving the current one by `delta`
+    /// points, clamped to the supported range.
+    pub fn stepped_font_size(&self, delta: i32) -> usize {
+        let size = self.font_size() as i64 + delta as i64;
+        size.clamp(MIN_FONT_SIZE as i64, MAX_FONT_SIZE as i64) as usize
     }
 
     pub fn line_height(&self) -> usize {
@@ -302,5 +312,36 @@ impl EditorConfig {
             return 0;
         }
         self.blink_interval.max(200)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config_with_size(font_size: usize) -> EditorConfig {
+        EditorConfig {
+            font_size,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn stepped_font_size_moves_by_delta() {
+        let config = config_with_size(13);
+        assert_eq!(config.stepped_font_size(1), 14);
+        assert_eq!(config.stepped_font_size(-1), 12);
+    }
+
+    #[test]
+    fn stepped_font_size_is_clamped() {
+        assert_eq!(
+            config_with_size(MAX_FONT_SIZE).stepped_font_size(1),
+            MAX_FONT_SIZE
+        );
+        assert_eq!(
+            config_with_size(MIN_FONT_SIZE).stepped_font_size(-1),
+            MIN_FONT_SIZE
+        );
     }
 }
