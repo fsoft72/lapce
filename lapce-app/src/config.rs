@@ -220,13 +220,21 @@ impl LapceConfig {
             LapceWorkspaceType::Local => {
                 if let Some(path) = workspace.path.as_ref() {
                     let path = path.join("./.lapce/settings.toml");
-                    config = config::Config::builder()
-                        .add_source(config.clone())
-                        .add_source(
-                            config::File::from(path.as_path()).required(false),
-                        )
-                        .build()
-                        .unwrap_or_else(|_| config.clone());
+                    // The agent table launches processes, so a workspace file
+                    // (shipped with the repository) may not define it.
+                    let text = std::fs::read_to_string(&path)
+                        .ok()
+                        .and_then(|text| agent::strip_agent_settings(&text));
+                    if let Some(text) = text {
+                        config = config::Config::builder()
+                            .add_source(config.clone())
+                            .add_source(config::File::from_str(
+                                &text,
+                                config::FileFormat::Toml,
+                            ))
+                            .build()
+                            .unwrap_or_else(|_| config.clone());
+                    }
                 }
             }
             LapceWorkspaceType::RemoteSSH(_) => {}
