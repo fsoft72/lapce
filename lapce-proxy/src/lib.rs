@@ -1,5 +1,6 @@
 #![allow(clippy::manual_clamp)]
 
+pub mod agent;
 pub mod buffer;
 pub mod cli;
 pub mod dispatch;

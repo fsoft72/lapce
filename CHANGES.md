@@ -19,3 +19,4 @@
 ## AI agent panel
 
 - Added `lapce_rpc::agent` with the shared types used by the agent panel (ACP client). Spec deltas from planning are recorded in the design spec.
+- Added the ACP crate to lapce-proxy and a PermissionBroker for pending agent permission requests.
