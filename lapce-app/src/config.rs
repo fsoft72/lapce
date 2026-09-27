@@ -969,6 +969,18 @@ impl LapceConfig {
                     .unwrap_or(0),
                 items: self.icon_theme_list.clone(),
             }),
+            ("agent", "default-server") => {
+                let mut items: Vec<String> =
+                    self.agent.servers.keys().cloned().collect();
+                items.sort();
+                Some(DropdownInfo {
+                    active_index: items
+                        .iter()
+                        .position(|s| s == &self.agent.default_server)
+                        .unwrap_or(0),
+                    items: items.into_iter().collect(),
+                })
+            }
             ("editor", "wrap-style") => Some(DropdownInfo {
                 // TODO: it would be better to have the text not be the default kebab-case when
                 // displayed in settings, but we would need to map back from the dropdown's value

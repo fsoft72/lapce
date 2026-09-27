@@ -29,9 +29,9 @@ use serde_json::Value;
 use crate::{
     command::CommandExecuted,
     config::{
-        DropdownInfo, LapceConfig, color::LapceColor, core::CoreConfig,
-        editor::EditorConfig, icon::LapceIcons, terminal::TerminalConfig,
-        ui::UIConfig,
+        DropdownInfo, LapceConfig, agent::AgentConfig, color::LapceColor,
+        core::CoreConfig, editor::EditorConfig, icon::LapceIcons,
+        terminal::TerminalConfig, ui::UIConfig,
     },
     keypress::KeyPressFocus,
     main_split::Editors,
@@ -181,6 +181,12 @@ impl SettingsData {
                     &TerminalConfig::DESCS[..],
                     into_settings_map(&config.terminal),
                 ),
+                (
+                    "Agent",
+                    &AgentConfig::FIELDS[..],
+                    &AgentConfig::DESCS[..],
+                    into_settings_map(&config.agent),
+                ),
             ] {
                 let pos = cx.create_rw_signal(Point::new(0.0, item_height_accum));
                 data_items.push_back(SettingsItem {
@@ -233,6 +239,11 @@ impl SettingsData {
                         header: false,
                     });
                     item_height_accum += 50.0;
+                }
+                if kind == "Agent" {
+                    let server_items = agent_server_items(cx, &config.agent);
+                    item_height_accum += 50.0 * server_items.len() as f64;
+                    data_items.extend(server_items);
                 }
             }
 
@@ -320,6 +331,58 @@ impl SettingsData {
             common,
         }
     }
+}
+
+/// Field name of the agent server arguments, stored as a list but edited as
+/// a single space separated text.
+const AGENT_ARGUMENTS_FIELD: &str = "arguments";
+
+/// Builds the editable command and arguments items of the default agent
+/// server. They are saved under `agent.servers.<name>` in the user settings.
+/// Returns nothing when the server is unknown or its name cannot be used as a
+/// TOML path segment.
+fn agent_server_items(cx: Scope, agent: &AgentConfig) -> Vec<SettingsItem> {
+    let name = &agent.default_server;
+    let Some(server) = agent.servers.get(name) else {
+        return Vec::new();
+    };
+    if name.contains('.') {
+        return Vec::new();
+    }
+    let kind = format!("agent.servers.{name}");
+    let fields = [
+        (
+            "command",
+            "Command that starts the selected ACP agent",
+            server.command.clone(),
+        ),
+        (
+            AGENT_ARGUMENTS_FIELD,
+            "Arguments passed to the command, separated by spaces",
+            server.arguments.join(" "),
+        ),
+    ];
+    fields
+        .into_iter()
+        .map(|(field, desc, value)| {
+            let title = format!("Agent: Server {}", field.to_title_case());
+            let filter_text = format!("agent {title} {desc} {name}").to_lowercase();
+            let filter_text =
+                format!("{filter_text}{}", filter_text.replace(' ', ""));
+            SettingsItem {
+                kind: kind.clone(),
+                name: title,
+                field: field.to_string(),
+                filter_text,
+                description: desc.to_string(),
+                value: SettingsValue::String(value.clone()),
+                serde_value: Value::String(value),
+                pos: cx.create_rw_signal(Point::ZERO),
+                size: cx.create_rw_signal(Size::ZERO),
+                header: false,
+            }
+        })
+        .collect()
 }
 
 pub fn settings_view(
@@ -625,6 +688,15 @@ fn settings_item_view(
                                         )
                                         .ok()
                                     })
+                                }
+                                _ if field == AGENT_ARGUMENTS_FIELD => {
+                                    serde::Serialize::serialize(
+                                        &value
+                                            .split_whitespace()
+                                            .collect::<Vec<_>>(),
+                                        toml_edit::ser::ValueSerializer::new(),
+                                    )
+                                    .ok()
                                 }
                                 _ => serde::Serialize::serialize(
                                     &value,
