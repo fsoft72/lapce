@@ -71,7 +71,10 @@ pub fn status(
     };
 
     let progresses = window_tab_data.progresses;
-    let mode = create_memo(move |_| window_tab_data.mode());
+    let mode = create_memo({
+        let window_tab_data = window_tab_data.clone();
+        move |_| window_tab_data.mode()
+    });
     let pointer_down = floem::reactive::create_rw_signal(false);
 
     stack((
@@ -380,7 +383,20 @@ pub fn status(
             .on_click_stop(move |_| {
                 palette_clone.run(PaletteKind::Language);
             });
-            (cursor_info, line_ending_info, language_info)
+            let agent_toggle = {
+                let panel = panel.clone();
+                let window_tab_data = window_tab_data.clone();
+                clickable_icon(
+                    || LapceIcons::AGENT,
+                    move || window_tab_data.toggle_panel_visual(PanelKind::Agent),
+                    move || panel.is_panel_visible_tracked(&PanelKind::Agent),
+                    || false,
+                    || "Toggle Agent Chat",
+                    config,
+                )
+                .style(|s| s.margin_horiz(6.0))
+            };
+            (cursor_info, line_ending_info, language_info, agent_toggle)
         })
         .style(|s| {
             s.height_pct(100.0)

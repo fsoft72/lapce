@@ -251,6 +251,18 @@ impl PanelData {
         false
     }
 
+    /// Reactive variant of `is_panel_visible`, for use in views and styles.
+    pub fn is_panel_visible_tracked(&self, kind: &PanelKind) -> bool {
+        let Some((index, position)) = self.panel_position(kind) else {
+            return false;
+        };
+        self.styles.with(|styles| {
+            styles
+                .get(&position)
+                .is_some_and(|style| style.active == index && style.shown)
+        })
+    }
+
     pub fn show_panel(&self, kind: &PanelKind) {
         if let Some((index, position)) = self.panel_position(kind) {
             self.styles.update(|styles| {
