@@ -353,8 +353,9 @@ impl AgentData {
         if text.is_empty() {
             return None;
         }
-        let len = doc.buffer.with_untracked(|buffer| buffer.len());
-        doc.do_raw_edit(&[(Selection::region(0, len), "")], EditType::Other);
+        // `reset` also moves the cursor to 0: clearing the buffer alone would
+        // leave it past the end, and the next keystroke would panic in xi-rope.
+        self.input.reset();
         Some(text)
     }
 
