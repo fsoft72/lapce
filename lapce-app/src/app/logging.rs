@@ -5,6 +5,10 @@ use tracing_subscriber::{filter::Targets, reload::Handle};
 
 use crate::tracing::*;
 
+/// Name of the log file, created in the current working directory, that
+/// records the communication with the AI agent.
+const AGENT_LOG_FILE_NAME: &str = "lapce-agent.log";
+
 #[inline(always)]
 pub(super) fn logging() -> (Handle<Targets>, Option<WorkerGuard>) {
     use tracing_subscriber::{filter, fmt, prelude::*, reload};
@@ -38,7 +42,17 @@ pub(super) fn logging() -> (Handle<Targets>, Option<WorkerGuard>) {
         .parse::<filter::Targets>()
         .unwrap_or_default();
 
-    let registry = tracing_subscriber::registry();
+    let agent_layer = agent_log_file().map(|file| {
+        tracing_subscriber::fmt::subscriber()
+            .with_ansi(false)
+            .with_writer(std::sync::Mutex::new(file))
+            .with_filter(
+                filter::Targets::new()
+                    .with_target("lapce_proxy::agent", LevelFilter::DEBUG),
+            )
+    });
+
+    let registry = tracing_subscriber::registry().with(agent_layer);
     if let Some(log_file) = log_file {
         let file_layer = tracing_subscriber::fmt::subscriber()
             .with_ansi(false)
@@ -61,6 +75,17 @@ pub(super) fn logging() -> (Handle<Targets>, Option<WorkerGuard>) {
     };
 
     (reload_handle, guard)
+}
+
+/// Opens (appending) the agent log in the current working directory.
+/// Returns `None`, after a note on stderr, when it cannot be opened.
+fn agent_log_file() -> Option<std::fs::File> {
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(AGENT_LOG_FILE_NAME)
+        .map_err(|err| eprintln!("cannot open {AGENT_LOG_FILE_NAME}: {err}"))
+        .ok()
 }
 
 pub(super) fn panic_hook() {
