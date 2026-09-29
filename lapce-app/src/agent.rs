@@ -9,6 +9,7 @@ use std::{
 };
 
 use floem::{
+    action::exec_after,
     ext_event::create_ext_action,
     keyboard::Modifiers,
     reactive::{Memo, RwSignal, Scope, SignalGet, SignalUpdate, SignalWith},
@@ -42,6 +43,9 @@ use crate::{
 /// How long closing a window or the app waits for a proxy to confirm that
 /// its agent process was killed.
 const AGENT_STOP_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// How long a toast stays visible.
+const TOAST_DURATION: Duration = Duration::from_millis(1500);
 
 /// One entry in the chat transcript.
 #[derive(Debug, Clone, PartialEq)]
@@ -291,6 +295,10 @@ pub struct AgentData {
     pub mention_items: Memo<Vec<String>>,
     /// Workspace files (relative paths) that can be mentioned.
     files: RwSignal<Vec<String>>,
+    /// The short message currently shown over the panel, if any.
+    pub toast: RwSignal<Option<String>>,
+    /// Counts the toasts shown, so an old timer never hides a newer toast.
+    toast_seq: RwSignal<u64>,
 }
 
 impl AgentData {
@@ -319,7 +327,22 @@ impl AgentData {
             mention_selected: cx.create_rw_signal(0),
             mention_items,
             files,
+            toast: cx.create_rw_signal(None),
+            toast_seq: cx.create_rw_signal(0),
         }
+    }
+
+    /// Shows `message` over the panel for [`TOAST_DURATION`].
+    pub fn show_toast(&self, message: &str) {
+        let id = self.toast_seq.get_untracked() + 1;
+        self.toast_seq.set(id);
+        self.toast.set(Some(message.to_string()));
+        let (toast, seq) = (self.toast, self.toast_seq);
+        exec_after(TOAST_DURATION, move |_| {
+            if seq.get_untracked() == id {
+                toast.set(None);
+            }
+        });
     }
 
     /// Whether the mention list is open and has something to pick.

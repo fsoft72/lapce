@@ -144,10 +144,12 @@ fn item_view(window_tab_data: Rc<WindowTabData>, item: AgentItem) -> impl View {
     // Replies are Markdown; everything else is plain text.
     let body = if is_assistant {
         let raw = text.clone();
+        let agent = window_tab_data.agent.clone();
         stack((
             markdown_view(config, text),
             button(window_tab_data.clone(), "Copy", move || {
                 SystemClipboard::new().put_string(raw.clone());
+                agent.show_toast("Copied to clipboard");
             })
             .style(|s| s.margin_top(4.0)),
         ))
@@ -497,15 +499,36 @@ fn agent_body(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View
 
     let input = input_box(window_tab_data.clone(), agent.clone());
 
+    let toast = {
+        let toast = agent.toast;
+        label(move || toast.get().unwrap_or_default()).style(move |s| {
+            let config = config.get();
+            s.absolute()
+                .inset_bottom(INPUT_HEIGHT + 30.0)
+                .inset_left(10.0)
+                .padding_horiz(10.0)
+                .padding_vert(5.0)
+                .border(1.0)
+                .border_radius(6.0)
+                .border_color(config.color(LapceColor::LAPCE_BORDER))
+                .background(config.color(LapceColor::PANEL_BACKGROUND))
+                .apply_if(toast.with(|toast| toast.is_none()), |s| s.hide())
+        })
+    };
+
     container(
         stack((
-            toolbar,
-            transcript,
-            permission_bar(window_tab_data.clone(), agent.clone()),
-            mention_list(window_tab_data.clone(), agent),
-            input,
+            stack((
+                toolbar,
+                transcript,
+                permission_bar(window_tab_data.clone(), agent.clone()),
+                mention_list(window_tab_data.clone(), agent),
+                input,
+            ))
+            .style(|s| s.flex_col().size_pct(100.0, 100.0)),
+            toast,
         ))
-        .style(|s| s.flex_col().size_pct(100.0, 100.0)),
+        .style(|s| s.size_pct(100.0, 100.0)),
     )
     .style(|s| s.size_pct(100.0, 100.0))
 }

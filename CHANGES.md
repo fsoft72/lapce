@@ -47,3 +47,4 @@
 - The agent transcript now shows the user prompts in a tinted, rounded box to tell them apart from the replies.
 - Agent replies in the transcript are now rendered as Markdown (headings, emphasis, lists, code blocks); images are not shown.
 - Each agent reply now ends with a Copy button that puts its raw Markdown in the clipboard.
+- Copying a reply now shows a short "Copied to clipboard" toast over the agent panel.
