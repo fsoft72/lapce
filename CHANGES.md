@@ -45,3 +45,4 @@
 - Fixed the prompt box wrapping every letter onto a new line: it now wraps at the width of the box instead of the width of its own text.
 - Added `@file` mentions to the agent prompt box: typing `@` plus a name lists the matching workspace files (`.git` and `node_modules` excluded); Up/Down/Enter/Tab/Esc drive the list, and the mentioned files are attached to the prompt as context.
 - The agent transcript now shows the user prompts in a tinted, rounded box to tell them apart from the replies.
+- Agent replies in the transcript are now rendered as Markdown (headings, emphasis, lists, code blocks); images are not shown.

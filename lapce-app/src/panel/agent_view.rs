@@ -1,13 +1,22 @@
 //! The AI agent panel: transcript, permission prompt, and input box.
 
-use std::rc::Rc;
+use std::{
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+};
 
 use floem::{
-    View,
+    IntoView, View,
     event::{Event, EventListener},
     peniko::kurbo::Rect,
     prelude::SignalTrack,
-    reactive::{SignalGet, SignalUpdate, SignalWith, create_memo, create_rw_signal},
+    reactive::{
+        ReadSignal, SignalGet, SignalUpdate, SignalWith, create_memo,
+        create_rw_signal,
+    },
     style::CursorStyle,
     views::{
         Decorators, container, dyn_stack,
@@ -16,7 +25,7 @@ use floem::{
             text::WrapMethod,
             view::{LineRegion, cursor_caret},
         },
-        label, scroll, stack,
+        empty, label, rich_text, scroll, stack,
     },
 };
 use lapce_core::buffer::rope_text::RopeText;
@@ -27,10 +36,14 @@ use super::{
 };
 use crate::{
     agent::{AgentData, AgentItem},
-    config::color::LapceColor,
+    config::{LapceConfig, color::LapceColor},
     editor::view::editor_view,
+    markdown::{MarkdownContent, parse_markdown},
     window_tab::{Focus, WindowTabData},
 };
+
+/// Line height factor used when rendering Markdown replies.
+const MARKDOWN_LINE_HEIGHT: f64 = 1.8;
 
 /// Height of the multi-line prompt box in pixels.
 const INPUT_HEIGHT: f32 = 110.0;
@@ -83,10 +96,34 @@ fn button(
         })
 }
 
+/// Renders `text` as Markdown. Images are not shown.
+fn markdown_view(config: ReadSignal<Arc<LapceConfig>>, text: String) -> impl View {
+    let id = AtomicU64::new(0);
+    dyn_stack(
+        move || parse_markdown(&text, MARKDOWN_LINE_HEIGHT, &config.get()),
+        move |_| id.fetch_add(1, Ordering::Relaxed),
+        move |content| match content {
+            MarkdownContent::Text(text_layout) => container(
+                rich_text(move || text_layout.clone()).style(|s| s.width_full()),
+            )
+            .style(|s| s.width_full()),
+            MarkdownContent::Image { .. } => container(empty()),
+            MarkdownContent::Separator => container(empty().style(move |s| {
+                s.width_full()
+                    .margin_vert(5.0)
+                    .height(1.0)
+                    .background(config.get().color(LapceColor::LAPCE_BORDER))
+            })),
+        },
+    )
+    .style(|s| s.flex_col().width_full().min_width(0.0))
+}
+
 /// One transcript entry.
 fn item_view(window_tab_data: Rc<WindowTabData>, item: AgentItem) -> impl View {
     let config = window_tab_data.common.config;
     let is_user = matches!(item, AgentItem::User(_));
+    let is_assistant = matches!(item, AgentItem::Assistant(_));
     let (prefix, text) = match &item {
         AgentItem::User(text) => ("You", text.clone()),
         AgentItem::Assistant(text) => ("Agent", text.clone()),
@@ -103,12 +140,20 @@ fn item_view(window_tab_data: Rc<WindowTabData>, item: AgentItem) -> impl View {
         AgentItem::Error(text) => ("Error", text.clone()),
         AgentItem::Note(text) => ("Note", text.clone()),
     };
+    // Replies are Markdown; everything else is plain text.
+    let body = if is_assistant {
+        markdown_view(config, text).into_any()
+    } else {
+        label(move || text.clone())
+            .style(|s| s.min_width(0.0).flex_grow(1.0f32))
+            .into_any()
+    };
     stack((
         label(move || prefix.to_string()).style(move |s| {
             s.font_bold()
                 .color(config.get().color(LapceColor::EDITOR_DIM))
         }),
-        label(move || text.clone()).style(|s| s.min_width(0.0).flex_grow(1.0f32)),
+        body,
     ))
     .style(move |s| {
         let config = config.get();
