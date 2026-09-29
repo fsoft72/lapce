@@ -42,3 +42,4 @@
 - Fixed a crash (xi-rope panic) when typing a second prompt: sending a prompt now resets the input box cursor along with its content.
 - Config tests now use the `agy` default server (they broke when it replaced the old default).
 - Removed the `gemini` and `agy` agent servers everywhere (they do not work over ACP); `pi` is the second default server. Config tests and the design docs updated accordingly.
+- Fixed the prompt box wrapping every letter onto a new line: it now wraps at the width of the box instead of the width of its own text.

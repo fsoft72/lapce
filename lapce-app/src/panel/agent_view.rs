@@ -13,7 +13,11 @@ use floem::{
     style::CursorStyle,
     views::{
         Decorators, container, dyn_stack,
-        editor::view::{LineRegion, cursor_caret},
+        editor::{
+            WrapProp,
+            text::WrapMethod,
+            view::{LineRegion, cursor_caret},
+        },
         label, scroll, stack,
     },
 };
@@ -35,6 +39,12 @@ const INPUT_HEIGHT: f32 = 110.0;
 
 /// Padding around the text inside the prompt box, as (horizontal, vertical).
 const INPUT_PADDING: (f64, f64) = (10.0, 6.0);
+
+/// Room left at the right of the text for the caret when wrapping lines.
+const INPUT_WRAP_MARGIN: f64 = 10.0;
+
+/// Narrowest width the prompt text is ever wrapped at.
+const INPUT_MIN_WRAP_WIDTH: f64 = 50.0;
 
 /// Builds the agent panel.
 pub fn agent_panel(
@@ -217,11 +227,21 @@ fn input_box(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View 
     });
     let debug_breakline = create_memo(move |_| None);
     let (pad_x, pad_y) = INPUT_PADDING;
+    // A local editor is as wide as its text, and the editor copies that width
+    // into its viewport, so the default "wrap at the editor width" would wrap
+    // every letter. Wrap at the width of the box instead.
+    let wrap_width = create_rw_signal(0.0f32);
 
     let text_area = container({
         scroll({
             let view = stack((
-                editor_view(editor.get_untracked(), debug_breakline, is_active),
+                editor_view(editor.get_untracked(), debug_breakline, is_active)
+                    .style(move |s| match wrap_width.get() {
+                        width if width > 0.0 => {
+                            s.set(WrapProp, WrapMethod::WrapWidth { width })
+                        }
+                        _ => s,
+                    }),
                 label(|| "Ask the agent (Enter to send, Shift+Enter for a new line)".to_string())
                     .style(move |s| {
                         let config = config.get();
@@ -266,6 +286,8 @@ fn input_box(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View 
             window_origin.set(pos + (pad_x, pad_y));
         })
         .on_scroll(move |rect| {
+            let text_width = rect.width() - pad_x - INPUT_WRAP_MARGIN;
+            wrap_width.set(text_width.max(INPUT_MIN_WRAP_WIDTH) as f32);
             viewport.set(rect);
         })
         .ensure_visible(move || {
