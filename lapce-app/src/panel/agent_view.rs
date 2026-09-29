@@ -22,13 +22,14 @@ use floem::{
         Decorators, container, dyn_stack,
         editor::{
             WrapProp,
+            text::SystemClipboard,
             text::WrapMethod,
             view::{LineRegion, cursor_caret},
         },
         empty, label, rich_text, scroll, stack,
     },
 };
-use lapce_core::buffer::rope_text::RopeText;
+use lapce_core::{buffer::rope_text::RopeText, register::Clipboard};
 use lapce_rpc::agent::AgentToolStatus;
 
 use super::{
@@ -142,7 +143,16 @@ fn item_view(window_tab_data: Rc<WindowTabData>, item: AgentItem) -> impl View {
     };
     // Replies are Markdown; everything else is plain text.
     let body = if is_assistant {
-        markdown_view(config, text).into_any()
+        let raw = text.clone();
+        stack((
+            markdown_view(config, text),
+            button(window_tab_data.clone(), "Copy", move || {
+                SystemClipboard::new().put_string(raw.clone());
+            })
+            .style(|s| s.margin_top(4.0)),
+        ))
+        .style(|s| s.flex_col().items_start().width_full().min_width(0.0))
+        .into_any()
     } else {
         label(move || text.clone())
             .style(|s| s.min_width(0.0).flex_grow(1.0f32))
