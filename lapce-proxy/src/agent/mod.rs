@@ -8,6 +8,7 @@ pub mod permission;
 pub mod process;
 pub mod prompt;
 pub mod session;
+pub mod wire_log;
 
 use std::{path::PathBuf, sync::Arc};
 
@@ -79,6 +80,10 @@ impl AgentManager {
         };
         let command = command::resolve_command(&config.command);
         let command_line = command::describe_command(&command, &config.args);
+        tracing::info!(
+            "starting agent session {session_generation}: `{command_line}` in {}",
+            workspace.display()
+        );
         let config = AgentServerConfig { command, ..config };
         let (cmd_tx, cmd_rx) = mpsc::unbounded();
         self.cmd_tx = Some(cmd_tx);
@@ -102,8 +107,14 @@ impl AgentManager {
                     cmd_rx,
                 ));
                 let reason = match result {
-                    _ if env.process.was_killed() => "stopped".to_string(),
-                    Ok(()) => "session closed".to_string(),
+                    _ if env.process.was_killed() => {
+                        tracing::info!("agent session `{command_line}` stopped");
+                        "stopped".to_string()
+                    }
+                    Ok(()) => {
+                        tracing::info!("agent session `{command_line}` closed");
+                        "session closed".to_string()
+                    }
                     Err(err) => {
                         tracing::error!(
                             "agent session `{command_line}` ended with an error: {err}"

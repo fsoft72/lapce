@@ -39,6 +39,7 @@ use super::{
     permission::PermissionBroker,
     process::AgentProcess,
     prompt::{ResolvedContext, build_prompt_text},
+    wire_log::{LineLogger, LoggedRead, LoggedWrite, WireDirection},
 };
 
 /// How many trailing bytes of the agent's stderr are kept for error messages.
@@ -166,11 +167,13 @@ async fn drain_stderr(
     tail: Arc<Mutex<VecDeque<u8>>>,
 ) {
     let mut buf = [0u8; 1024];
+    let mut logger = LineLogger::new(WireDirection::Stderr);
     loop {
         let read = match stderr.read(&mut buf).await {
             Ok(0) | Err(_) => return,
             Ok(read) => read,
         };
+        logger.feed(&buf[..read]);
         let mut tail = tail.lock();
         tail.extend(&buf[..read]);
         let excess = tail.len().saturating_sub(STDERR_TAIL_LIMIT);
@@ -225,19 +228,29 @@ pub async fn run_session(
             .envs(config.env),
     );
     let (stdin, stdout, stderr, mut child) = agent.spawn_process()?;
+    tracing::info!("agent process spawned (pid {})", child.id());
     if !env.process.attach(child.id()) {
+        tracing::info!("agent session stopped before the connection started");
         return Ok(());
     }
     let tail = Arc::new(Mutex::new(VecDeque::new()));
     let drain = drain_stderr(stderr, tail.clone()).fuse();
-    let connection =
-        connect(ByteStreams::new(stdin, stdout), env.clone(), cmds).fuse();
+    let connection = connect(
+        ByteStreams::new(
+            LoggedWrite::new(stdin, WireDirection::ToAgent),
+            LoggedRead::new(stdout, WireDirection::FromAgent),
+        ),
+        env.clone(),
+        cmds,
+    )
+    .fuse();
     let exit = child.status().fuse();
     futures::pin_mut!(drain, connection, exit);
     let result = loop {
         select! {
             res = connection => break res,
             status = exit => {
+                tracing::info!("agent process exited: {status:?}");
                 // Kill what is left of the tree so stderr closes, then give
                 // the drain a moment to collect the last lines.
                 env.process.release();
@@ -268,8 +281,12 @@ async fn connect(
             {
                 let env = env.clone();
                 async move |notification: SessionNotification, _cx| {
-                    if let Some(event) = map_update(notification.update) {
-                        env.emit(event);
+                    match map_update(notification.update) {
+                        Some(event) => {
+                            tracing::debug!("agent update forwarded to the UI");
+                            env.emit(event);
+                        }
+                        None => tracing::debug!("agent update ignored (not shown)"),
                     }
                     Ok(())
                 }
@@ -281,7 +298,10 @@ async fn connect(
                 let env = env.clone();
                 async move |req: ReadTextFileRequest, responder, _cx| {
                     match env.read_file(&req) {
-                        Ok(content) => responder.respond(ReadTextFileResponse::new(content)),
+                        Ok(content) => {
+                            tracing::debug!("agent read {}", req.path.display());
+                            responder.respond(ReadTextFileResponse::new(content))
+                        }
                         Err(err) => {
                             tracing::warn!(
                                 "agent read of {} refused: {err:#}",
@@ -299,7 +319,10 @@ async fn connect(
                 let env = env.clone();
                 async move |req: WriteTextFileRequest, responder, _cx| {
                     match env.write_file(&req) {
-                        Ok(()) => responder.respond(WriteTextFileResponse::new()),
+                        Ok(()) => {
+                            tracing::debug!("agent wrote {}", req.path.display());
+                            responder.respond(WriteTextFileResponse::new())
+                        }
                         Err(err) => {
                             tracing::warn!(
                                 "agent write of {} refused: {err:#}",
@@ -317,12 +340,14 @@ async fn connect(
                 let env = env.clone();
                 async move |req: RequestPermissionRequest, responder, cx| {
                     // Never await the user inside a handler: it would freeze the event loop.
-                    let decision = env.open_permission(
-                        permission_title(&req),
-                        map_permission_options(&req),
-                    );
+                    let title = permission_title(&req);
+                    tracing::info!("agent asks permission: {title}");
+                    let decision =
+                        env.open_permission(title, map_permission_options(&req));
                     cx.spawn(async move {
-                        let outcome = match decision.await {
+                        let answer = decision.await;
+                        tracing::info!("permission answered: {answer:?}");
+                        let outcome = match answer {
                             Ok(Some(option_id)) => RequestPermissionOutcome::Selected(
                                 SelectedPermissionOutcome::new(option_id),
                             ),
@@ -338,7 +363,8 @@ async fn connect(
             let env = env.clone();
             async move |connection: ConnectionTo<Agent>| {
                 let handshake = async {
-                    connection
+                    tracing::info!("sending initialize");
+                    let init = connection
                         .send_request(
                             InitializeRequest::new(ProtocolVersion::V1)
                                 .client_capabilities(ClientCapabilities::new().fs(
@@ -349,10 +375,12 @@ async fn connect(
                         )
                         .block_task()
                         .await?;
+                    tracing::info!("initialize answered: {init:?}");
                     let session = connection
                         .send_request(NewSessionRequest::new(env.workspace.clone()))
                         .block_task()
                         .await?;
+                    tracing::info!("session created: {:?}", session.session_id);
                     Ok::<_, AcpError>(session.session_id)
                 }
                 .fuse();
@@ -382,6 +410,7 @@ async fn connect(
                         },
                     }
                 };
+                tracing::info!("agent ready");
                 env.emit(AgentEvent::Status {
                     status: AgentStatus::Ready,
                 });
@@ -399,6 +428,11 @@ async fn connect(
                     };
                     let contexts = env.resolve_contexts(contexts);
                     let prompt = build_prompt_text(&text, &contexts);
+                    tracing::info!(
+                        "sending prompt ({} chars, {} context items)",
+                        prompt.chars().count(),
+                        contexts.len()
+                    );
                     let turn = connection
                         .send_request(PromptRequest::new(
                             session_id.clone(),
@@ -412,6 +446,7 @@ async fn connect(
                             res = turn => break res.map(|response| response.stop_reason),
                             cmd = cmds.next() => match cmd {
                                 Some(SessionCommand::Cancel) => {
+                                    tracing::info!("cancelling the running turn");
                                     env.broker.cancel_all();
                                     connection.send_notification(
                                         CancelNotification::new(session_id.clone()),
@@ -423,9 +458,12 @@ async fn connect(
                         }
                     };
                     let event = match outcome {
-                        Ok(stop) => AgentEvent::TurnEnded {
-                            stop_reason: format!("{stop:?}"),
-                        },
+                        Ok(stop) => {
+                            tracing::info!("turn ended: {stop:?}");
+                            AgentEvent::TurnEnded {
+                                stop_reason: format!("{stop:?}"),
+                            }
+                        }
                         Err(err) => {
                             tracing::error!("agent prompt failed: {err}");
                             AgentEvent::Error {

@@ -36,3 +36,4 @@
 - Added an "Agent" section to Settings: default server dropdown plus command and arguments of the selected server (saved in `agent.servers.<name>` of the user settings).
 - Replaced the default `gemini` agent server with `agy` in `defaults/settings.toml` (no ACP flag: `agy` exposes none in `--help`).
 - Fixed unused variable warnings in `logging.rs` and `agent_view.rs`.
+- Added ACP logging in lapce-proxy: lifecycle events at `info` (spawn, initialize, session, prompt, turn end, permissions, exit) and every raw JSON-RPC line plus agent stderr at `debug` (target `lapce_proxy::agent::wire`). Lines go to the Lapce log file; on the console use `LAPCE_LOG=lapce_proxy=debug`.
