@@ -38,3 +38,4 @@
 - Fixed unused variable warnings in `logging.rs` and `agent_view.rs`.
 - Added ACP logging in lapce-proxy: lifecycle events at `info` (spawn, initialize, session, prompt, turn end, permissions, exit) and every raw JSON-RPC line plus agent stderr at `debug` (target `lapce_proxy::agent::wire`). Lines go to the Lapce log file; on the console use `LAPCE_LOG=lapce_proxy=debug`.
 - The agent communication log is now also written to `lapce-agent.log` in the current working directory (appended, debug level, only `lapce_proxy::agent` targets).
+- Added a `pi` agent server (`npx -y pi-acp`) to the default settings; initialize and session/new verified by hand against the adapter.
