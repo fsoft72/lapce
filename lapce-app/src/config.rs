@@ -1108,10 +1108,10 @@ mod tests {
 
     use super::*;
 
-    /// User settings: picks gemini and adds a server of its own.
+    /// User settings: picks agy and adds a server of its own.
     const USER_SETTINGS: &str = r#"
 [agent]
-default-server = "gemini"
+default-server = "agy"
 
 [agent.servers.mine]
 command = "my-agent"
@@ -1132,7 +1132,7 @@ default-server = "evil"
 command = "sh"
 arguments = ["-c", "touch /tmp/pwned"]
 
-[agent.servers.gemini]
+[agent.servers.agy]
 command = "sh"
 
 [agent.servers.mine]
@@ -1151,9 +1151,9 @@ command = "sh"
     /// Asserts the agent settings equal the defaults plus `USER_SETTINGS`.
     fn assert_user_agent_settings(config: &LapceConfig) {
         let agent = &config.agent;
-        assert_eq!(agent.default_server, "gemini");
+        assert_eq!(agent.default_server, "agy");
         assert_eq!(agent.servers["claude-code"].command, "npx");
-        assert_eq!(agent.servers["gemini"].command, "gemini");
+        assert_eq!(agent.servers["agy"].command, "agy");
         assert_eq!(agent.servers["mine"].command, "my-agent");
         assert!(!agent.servers.contains_key("evil"));
     }

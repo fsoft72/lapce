@@ -40,3 +40,4 @@
 - The agent communication log is now also written to `lapce-agent.log` in the current working directory (appended, debug level, only `lapce_proxy::agent` targets).
 - Added a `pi` agent server (`npx -y pi-acp`) to the default settings; initialize and session/new verified by hand against the adapter.
 - Fixed a crash (xi-rope panic) when typing a second prompt: sending a prompt now resets the input box cursor along with its content.
+- Config tests now use the `agy` default server (they broke when it replaced the old default).
