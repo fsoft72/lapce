@@ -34,3 +34,4 @@
 - The agent command is resolved with PATHEXT on Windows (`npx` -> `npx.cmd`), errors name the command line and the agent's stderr, the status label is readable, and session errors are logged.
 - Added a small agent icon at the bottom right of the status bar to open / close the agent chat panel.
 - Added an "Agent" section to Settings: default server dropdown plus command and arguments of the selected server (saved in `agent.servers.<name>` of the user settings).
+- Replaced the default `gemini` agent server with `agy` in `defaults/settings.toml` (no ACP flag: `agy` exposes none in `--help`).

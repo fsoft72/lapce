@@ -111,6 +111,6 @@ default-server = "claude-code"
 command = "npx"
 arguments = ["-y", "@agentclientprotocol/claude-agent-acp@latest"]
 
-[agent.servers.gemini]
-command = "gemini"
-arguments = ["--experimental-acp"]
+[agent.servers.agy]
+command = "agy"
+arguments = []
