@@ -86,6 +86,7 @@ fn button(
 /// One transcript entry.
 fn item_view(window_tab_data: Rc<WindowTabData>, item: AgentItem) -> impl View {
     let config = window_tab_data.common.config;
+    let is_user = matches!(item, AgentItem::User(_));
     let (prefix, text) = match &item {
         AgentItem::User(text) => ("You", text.clone()),
         AgentItem::Assistant(text) => ("Agent", text.clone()),
@@ -109,11 +110,19 @@ fn item_view(window_tab_data: Rc<WindowTabData>, item: AgentItem) -> impl View {
         }),
         label(move || text.clone()).style(|s| s.min_width(0.0).flex_grow(1.0f32)),
     ))
-    .style(|s| {
+    .style(move |s| {
+        let config = config.get();
+        // The user's prompts sit in a tinted box so they stand out from the replies.
         s.flex_col()
             .width_pct(100.0)
             .padding_horiz(10.0)
             .padding_vert(4.0)
+            .apply_if(is_user, |s| {
+                s.margin_vert(4.0)
+                    .padding_vert(6.0)
+                    .border_radius(6.0)
+                    .background(config.color(LapceColor::PANEL_HOVERED_BACKGROUND))
+            })
     })
 }
 
