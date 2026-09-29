@@ -43,3 +43,4 @@
 - Config tests now use the `agy` default server (they broke when it replaced the old default).
 - Removed the `gemini` and `agy` agent servers everywhere (they do not work over ACP); `pi` is the second default server. Config tests and the design docs updated accordingly.
 - Fixed the prompt box wrapping every letter onto a new line: it now wraps at the width of the box instead of the width of its own text.
+- Added `@file` mentions to the agent prompt box: typing `@` plus a name lists the matching workspace files (`.git` and `node_modules` excluded); Up/Down/Enter/Tab/Esc drive the list, and the mentioned files are attached to the prompt as context.

@@ -7,9 +7,7 @@ use floem::{
     event::{Event, EventListener},
     peniko::kurbo::Rect,
     prelude::SignalTrack,
-    reactive::{
-        SignalGet, SignalUpdate, SignalWith, create_memo, create_rw_signal,
-    },
+    reactive::{SignalGet, SignalUpdate, SignalWith, create_memo, create_rw_signal},
     style::CursorStyle,
     views::{
         Decorators, container, dyn_stack,
@@ -203,6 +201,53 @@ fn send_button(
         })
 }
 
+/// The list of files matching the `@mention` being typed, shown above the prompt box.
+fn mention_list(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View {
+    let config = window_tab_data.common.config;
+    let items = agent.mention_items;
+    let selected = agent.mention_selected;
+    let visible = create_memo({
+        let agent = agent.clone();
+        move |_| {
+            agent.mention.with(|mention| mention.is_some())
+                && items.with(|items| !items.is_empty())
+        }
+    });
+    dyn_stack(
+        move || items.get().into_iter().enumerate().collect::<Vec<_>>(),
+        |(index, file)| (*index, file.clone()),
+        move |(index, file)| {
+            let agent = agent.clone();
+            label(move || file.clone())
+                .on_click_stop(move |_| {
+                    agent.mention_selected.set(index);
+                    agent.accept_mention();
+                })
+                .style(move |s| {
+                    let config = config.get();
+                    s.width_pct(100.0)
+                        .padding_horiz(10.0)
+                        .padding_vert(3.0)
+                        .cursor(CursorStyle::Pointer)
+                        .apply_if(selected.get() == index, |s| {
+                            s.background(
+                                config.color(LapceColor::PANEL_HOVERED_BACKGROUND),
+                            )
+                        })
+                })
+        },
+    )
+    .style(move |s| {
+        let config = config.get();
+        s.flex_col()
+            .width_pct(100.0)
+            .border_top(1.0)
+            .border_color(config.color(LapceColor::LAPCE_BORDER))
+            .background(config.color(LapceColor::PANEL_BACKGROUND))
+            .apply_if(!visible.get(), |s| s.hide())
+    })
+}
+
 /// The multi-line prompt box (Enter sends, Shift+Enter adds a line) and the Send button.
 fn input_box(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View {
     let config = window_tab_data.common.config;
@@ -242,16 +287,19 @@ fn input_box(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View 
                         }
                         _ => s,
                     }),
-                label(|| "Ask the agent (Enter to send, Shift+Enter for a new line)".to_string())
-                    .style(move |s| {
-                        let config = config.get();
-                        s.absolute()
-                            .items_center()
-                            .height(config.editor.line_height() as f32)
-                            .color(config.color(LapceColor::EDITOR_DIM))
-                            .apply_if(!is_empty.get(), |s| s.hide())
-                            .selectable(false)
-                    }),
+                label(|| {
+                    "Ask the agent (Enter to send, Shift+Enter for a new line)"
+                        .to_string()
+                })
+                .style(move |s| {
+                    let config = config.get();
+                    s.absolute()
+                        .items_center()
+                        .height(config.editor.line_height() as f32)
+                        .color(config.color(LapceColor::EDITOR_DIM))
+                        .apply_if(!is_empty.get(), |s| s.hide())
+                        .selectable(false)
+                }),
             ))
             .style(move |s| {
                 s.absolute()
@@ -389,7 +437,8 @@ fn agent_body(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View
         stack((
             toolbar,
             transcript,
-            permission_bar(window_tab_data.clone(), agent),
+            permission_bar(window_tab_data.clone(), agent.clone()),
+            mention_list(window_tab_data.clone(), agent),
             input,
         ))
         .style(|s| s.flex_col().size_pct(100.0, 100.0)),

@@ -3,17 +3,21 @@
 use std::{
     collections::VecDeque,
     hash::{Hash, Hasher},
-    path::Path,
+    path::{Path, PathBuf},
     rc::Rc,
     time::Duration,
 };
 
 use floem::{
+    ext_event::create_ext_action,
     keyboard::Modifiers,
-    reactive::{RwSignal, Scope, SignalGet, SignalUpdate, SignalWith},
+    reactive::{Memo, RwSignal, Scope, SignalGet, SignalUpdate, SignalWith},
 };
 use lapce_core::{
-    buffer::rope_text::RopeText, command::EditCommand, editor::EditType, mode::Mode,
+    buffer::rope_text::RopeText,
+    command::{EditCommand, FocusCommand},
+    editor::EditType,
+    mode::Mode,
     selection::Selection,
 };
 use lapce_rpc::agent::{
@@ -21,7 +25,13 @@ use lapce_rpc::agent::{
     AgentToolStatus,
 };
 
+use lapce_rpc::proxy::ProxyResponse;
+
 use crate::{
+    agent_mention::{
+        MAX_MENTION_ITEMS, Mention, filter_files, is_excluded, mention_at_end,
+        mentioned_paths,
+    },
     command::{CommandExecuted, CommandKind, LapceCommand},
     editor::EditorData,
     keypress::{KeyPressFocus, condition::Condition},
@@ -273,6 +283,14 @@ pub struct AgentData {
     pub common: Rc<CommonData>,
     /// The prompt input box.
     pub input: EditorData,
+    /// The `@file` mention being typed in the input box, if any.
+    pub mention: RwSignal<Option<Mention>>,
+    /// Index of the highlighted entry of the mention list.
+    pub mention_selected: RwSignal<usize>,
+    /// The files matching the mention being typed, best match first.
+    pub mention_items: Memo<Vec<String>>,
+    /// Workspace files (relative paths) that can be mentioned.
+    files: RwSignal<Vec<String>>,
 }
 
 impl AgentData {
@@ -283,12 +301,135 @@ impl AgentData {
         common: Rc<CommonData>,
     ) -> Self {
         let input = main_split.editors.make_local(cx, common.clone());
+        let mention = cx.create_rw_signal(None::<Mention>);
+        let files = cx.create_rw_signal(Vec::<String>::new());
+        let mention_items = cx.create_memo(move |_| {
+            let Some(mention) = mention.get() else {
+                return Vec::new();
+            };
+            files
+                .with(|files| filter_files(files, &mention.query, MAX_MENTION_ITEMS))
+        });
         Self {
             state: cx.create_rw_signal(AgentState::default()),
             main_split,
             common,
             input,
+            mention,
+            mention_selected: cx.create_rw_signal(0),
+            mention_items,
+            files,
         }
+    }
+
+    /// Whether the mention list is open and has something to pick.
+    pub fn mention_visible(&self) -> bool {
+        self.mention.with_untracked(|mention| mention.is_some())
+            && self.mention_items.with_untracked(|items| !items.is_empty())
+    }
+
+    /// Re-reads the text before the cursor to open, update or close the mention list.
+    fn update_mention(&self) {
+        let offset = self.input.cursor().with_untracked(|cursor| cursor.offset());
+        let before = self
+            .input
+            .doc()
+            .buffer
+            .with_untracked(|buffer| buffer.slice_to_cow(0..offset).to_string());
+        let mention = mention_at_end(&before);
+        if mention == self.mention.get_untracked() {
+            return;
+        }
+        if mention.is_some() && self.mention.get_untracked().is_none() {
+            self.load_files();
+        }
+        self.mention_selected.set(0);
+        self.mention.set(mention);
+    }
+
+    /// Fetches the workspace files for the mention list, leaving out `.git` and `node_modules`.
+    fn load_files(&self) {
+        let Some(root) = self.common.workspace.path.clone() else {
+            return;
+        };
+        let files = self.files;
+        let send =
+            create_ext_action(self.common.scope, move |paths: Vec<PathBuf>| {
+                let mut relative: Vec<String> = paths
+                    .iter()
+                    .map(|path| path.strip_prefix(&root).unwrap_or(path))
+                    .filter(|path| !is_excluded(path))
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .collect();
+                relative.sort();
+                files.set(relative);
+            });
+        self.common.proxy.get_files(move |result| {
+            if let Ok(ProxyResponse::GetFilesResponse { items }) = result {
+                send(items);
+            }
+        });
+    }
+
+    /// Moves the highlight of the mention list by `step` entries, wrapping around.
+    fn move_mention_selection(&self, step: isize) {
+        let len = self.mention_items.with_untracked(|items| items.len()) as isize;
+        if len == 0 {
+            return;
+        }
+        let selected = self.mention_selected.get_untracked() as isize;
+        self.mention_selected
+            .set((selected + step).rem_euclid(len) as usize);
+    }
+
+    /// Replaces the `@query` being typed with the highlighted file.
+    pub fn accept_mention(&self) {
+        let Some(mention) = self.mention.get_untracked() else {
+            return;
+        };
+        let file = self.mention_items.with_untracked(|items| {
+            items.get(self.mention_selected.get_untracked()).cloned()
+        });
+        let Some(file) = file else {
+            return;
+        };
+        let offset = self.input.cursor().with_untracked(|cursor| cursor.offset());
+        let replacement = format!("@{file} ");
+        self.input.doc().do_raw_edit(
+            &[(
+                Selection::region(mention.start, offset),
+                replacement.as_str(),
+            )],
+            EditType::InsertChars,
+        );
+        let caret = mention.start + replacement.len();
+        self.input
+            .cursor()
+            .update(|cursor| cursor.set_insert(Selection::caret(caret)));
+        self.mention.set(None);
+    }
+
+    /// The whole files mentioned as `@path` in `text`. Only files of the
+    /// workspace list are attached, and the ones already in `contexts` are skipped.
+    fn mention_contexts(
+        &self,
+        text: &str,
+        contexts: &[AgentContext],
+    ) -> Vec<AgentContext> {
+        let Some(root) = self.common.workspace.path.clone() else {
+            return Vec::new();
+        };
+        let files = self.files.get_untracked();
+        mentioned_paths(text)
+            .into_iter()
+            .filter(|path| files.iter().any(|file| file == path))
+            .map(|path| root.join(path))
+            .filter(|path| contexts.iter().all(|context| &context.path != path))
+            .map(|path| AgentContext {
+                path,
+                selection: None,
+            })
+            .collect()
     }
 
     /// Applies an event coming from the proxy.
@@ -356,6 +497,7 @@ impl AgentData {
         // `reset` also moves the cursor to 0: clearing the buffer alone would
         // leave it past the end, and the next keystroke would panic in xi-rope.
         self.input.reset();
+        self.mention.set(None);
         Some(text)
     }
 
@@ -409,7 +551,10 @@ impl AgentData {
             self.restart();
         }
         self.state.update(|state| state.push_user(&text));
-        self.common.proxy.agent_prompt(text, self.active_context());
+        let mut contexts = self.active_context();
+        let mentioned = self.mention_contexts(&text, &contexts);
+        contexts.extend(mentioned);
+        self.common.proxy.agent_prompt(text, contexts);
     }
 
     /// Stops the agent before its window or the app closes, blocking up to
@@ -463,9 +608,16 @@ impl KeyPressFocus for AgentData {
         Mode::Insert
     }
 
-    /// The agent panel only satisfies the panel focus condition.
+    /// The agent panel satisfies the panel focus condition; while the mention
+    /// list is open it also acts as a list, so Up, Down, Enter, Tab and Esc drive it.
     fn check_condition(&self, condition: Condition) -> bool {
-        matches!(condition, Condition::PanelFocus)
+        match condition {
+            Condition::PanelFocus => true,
+            Condition::ListFocus | Condition::CompletionFocus => {
+                self.mention_visible()
+            }
+            _ => false,
+        }
     }
 
     /// Forwards editing commands to the input box; Enter sends the prompt and
@@ -479,7 +631,19 @@ impl KeyPressFocus for AgentData {
         match &command.kind {
             CommandKind::Workbench(_) => {}
             CommandKind::Scroll(_) => {}
-            CommandKind::Focus(_) => {}
+            CommandKind::Focus(cmd) => {
+                if !self.mention_visible() {
+                    return CommandExecuted::No;
+                }
+                match cmd {
+                    FocusCommand::ListNext => self.move_mention_selection(1),
+                    FocusCommand::ListPrevious => self.move_mention_selection(-1),
+                    FocusCommand::ListSelect => self.accept_mention(),
+                    FocusCommand::ModalClose => self.mention.set(None),
+                    _ => return CommandExecuted::No,
+                }
+                return CommandExecuted::Yes;
+            }
             CommandKind::Edit(_)
             | CommandKind::Move(_)
             | CommandKind::MultiSelection(_) => {
@@ -494,7 +658,9 @@ impl KeyPressFocus for AgentData {
                     _ => {}
                 }
 
-                return self.input.run_command(command, count, mods);
+                let executed = self.input.run_command(command, count, mods);
+                self.update_mention();
+                return executed;
             }
             CommandKind::MotionMode(_) => {}
         }
@@ -504,6 +670,7 @@ impl KeyPressFocus for AgentData {
     /// Types a character into the input box.
     fn receive_char(&self, c: &str) {
         self.input.receive_char(c);
+        self.update_mention();
     }
 }
 
