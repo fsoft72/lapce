@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add an agent panel to Lapce that talks to an external ACP agent (Claude Code adapter, Gemini CLI) running in `lapce-proxy`, with edits applied to editor buffers and per-request approval.
+**Goal:** Add an agent panel to Lapce that talks to an external ACP agent (Claude Code adapter, pi adapter) running in `lapce-proxy`, with edits applied to editor buffers and per-request approval.
 
 **Architecture:** `lapce-proxy` owns the agent subprocess and the ACP session (official `agent-client-protocol` crate, driven by `futures::executor::block_on` on a dedicated thread, because the proxy is synchronous and the crate is runtime agnostic). The agent's file reads go through the dispatcher (which owns the synced buffers). Writes to open files go to the UI as a notification and are applied as one undoable edit; writes to closed files go straight to disk. The UI holds a plain `AgentState` (unit testable) inside a signal and renders it in a new `PanelKind::Agent`.
 
@@ -1405,7 +1405,7 @@ In `lapce-app/src/config.rs`:
 - add the field `pub agent: AgentConfig,` to `LapceConfig` right after `pub terminal: TerminalConfig,`
 - in the config update function, after `self.terminal.get_indexed_colors();` add `self.agent = new.agent;`
 
-Append to `defaults/settings.toml` (verify the Gemini flag with `gemini --help` first: current Gemini CLI builds expose ACP mode as `--experimental-acp` or `--acp`; use whichever your installed version lists):
+Append to `defaults/settings.toml`:
 
 ```toml
 [agent]
@@ -1415,9 +1415,9 @@ default-server = "claude-code"
 command = "npx"
 arguments = ["-y", "@agentclientprotocol/claude-agent-acp@latest"]
 
-[agent.servers.gemini]
-command = "gemini"
-arguments = ["--experimental-acp"]
+[agent.servers.pi]
+command = "npx"
+arguments = ["-y", "pi-acp"]
 ```
 
 - [ ] **Step 4: Run the config tests**
@@ -3055,13 +3055,13 @@ git commit -m "feat(agent): add the agent panel"
 
 Set `default-server = "claude-code"`. Open a real project, ask "add a doc comment to the main function", approve the edit. Expected: the file open in the editor changes as one undoable edit (press undo once to revert), the transcript shows tool cards, no crash. Also try an unsaved edit first: type a character without saving, ask the agent to read the file, and confirm its answer reflects the unsaved text (Review Focus item 4).
 
-- [ ] **Step 2: Manual test with Gemini CLI**
+- [ ] **Step 2: Manual test with pi**
 
-Set `default-server = "gemini"`. Ask a question about the open file and confirm a streamed answer. If Gemini rejects the ACP flag, run `gemini --help`, fix the `arguments` in `defaults/settings.toml`, and commit that as a fix.
+Set `default-server = "pi"`. Ask a question about the open file and confirm a streamed answer.
 
 - [ ] **Step 3: Process cleanup check**
 
-Start a session, then close the Lapce window. Run `pgrep -fa "claude-agent-acp|mock_acp_agent|gemini"`. Expected: no leftover agent process. If one remains, the `AcpAgent` child is not killed on drop: in `AgentManager::stop` and on proxy shutdown that is a bug to fix before merging (spawn the child with kill-on-drop or keep its handle and kill it explicitly), with a regression test in `agent_session.rs` that asserts the mock process is gone after `stop()`.
+Start a session, then close the Lapce window. Run `pgrep -fa "claude-agent-acp|mock_acp_agent|pi-acp"`. Expected: no leftover agent process. If one remains, the `AcpAgent` child is not killed on drop: in `AgentManager::stop` and on proxy shutdown that is a bug to fix before merging (spawn the child with kill-on-drop or keep its handle and kill it explicitly), with a regression test in `agent_session.rs` that asserts the mock process is gone after `stop()`.
 
 - [ ] **Step 4: Security review**
 

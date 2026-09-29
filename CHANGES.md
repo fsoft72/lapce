@@ -41,3 +41,4 @@
 - Added a `pi` agent server (`npx -y pi-acp`) to the default settings; initialize and session/new verified by hand against the adapter.
 - Fixed a crash (xi-rope panic) when typing a second prompt: sending a prompt now resets the input box cursor along with its content.
 - Config tests now use the `agy` default server (they broke when it replaced the old default).
+- Removed the `gemini` and `agy` agent servers everywhere (they do not work over ACP); `pi` is the second default server. Config tests and the design docs updated accordingly.

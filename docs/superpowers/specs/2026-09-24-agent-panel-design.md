@@ -12,7 +12,7 @@ Add an AI agent panel to Lapce, similar to Zed and VS Code, to chat with an exte
 - Protocol: ACP, agent runs as a subprocess speaking JSON-RPC over stdio.
 - Agent host: `lapce-proxy`, so remote, WSL and SSH workspaces work.
 - Edit flow (v1): edits are applied to buffers with per-request approval. No diff review UI.
-- Agents in v1: Claude Code (via ACP adapter) and Gemini CLI. Others are configurable through settings but not tested.
+- Agents in v1: Claude Code and pi (both via ACP adapters). Others are configurable through settings but not tested.
 - Protocol implementation: official `agent-client-protocol` Rust crate. Fallback: hand-rolled JSON-RPC over `lapce-rpc/src/stdio.rs`, keeping all ACP logic behind one module boundary.
 
 ## Non-goals (v1)
@@ -30,7 +30,7 @@ Add an AI agent panel to Lapce, similar to Zed and VS Code, to chat with an exte
 - `lapce-proxy/src/agent/`: spawns the agent process, runs the ACP session, serves the agent's file and terminal requests. Depends on the proxy buffer and terminal layers.
 - `lapce-app/src/agent/`: chat data model (messages, tool cards, pending permission). No UI code.
 - `lapce-app/src/panel/agent_view.rs`: floem view. New `PanelKind::Agent` in `panel/kind.rs`, new icon, entry in the panel position defaults.
-- Config: `[agent.servers.<name>]` with `command`, `args`, `env`. Claude Code and Gemini CLI ship as defaults.
+- Config: `[agent.servers.<name>]` with `command`, `args`, `env`. Claude Code and pi ship as defaults.
 
 ## Data flow
 
@@ -58,7 +58,7 @@ Cancel: `AgentCancel` sends `session/cancel` and rejects any pending permission.
 
 - Unit tests for RPC message mapping and the permission state machine.
 - Integration test with a mock ACP agent (stdio script replaying canned responses), no real agent in CI.
-- Manual test against Claude Code and Gemini CLI.
+- Manual test against Claude Code and pi.
 
 ## Open questions
 
