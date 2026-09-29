@@ -318,8 +318,6 @@ fn input_box(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View 
 /// The whole panel body: toolbar, transcript, permission bar, input box.
 fn agent_body(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View {
     let config = window_tab_data.common.config;
-    let focus = window_tab_data.common.focus;
-    let is_focused = move || focus.get() == Focus::Panel(PanelKind::Agent);
 
     let toolbar = stack((
         button(window_tab_data.clone(), "Restart", {
