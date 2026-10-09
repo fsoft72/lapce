@@ -12,7 +12,8 @@ use std::{
 
 use floem::{
     IntoView, View,
-    event::{Event, EventListener},
+    event::{Event, EventListener, EventPropagation},
+    keyboard::{KeyCode, PhysicalKey},
     peniko::kurbo::Rect,
     prelude::SignalTrack,
     reactive::{
@@ -77,6 +78,32 @@ pub fn agent_panel(
         .debug_name("Agent Panel")
 }
 
+/// Whether `key` presses a focused button: Enter, keypad Enter or Space,
+/// the same keys floem turns into a click on the focused view.
+fn is_activation_key(key: &PhysicalKey) -> bool {
+    matches!(
+        key,
+        PhysicalKey::Code(KeyCode::Enter | KeyCode::NumpadEnter | KeyCode::Space)
+    )
+}
+
+/// Makes `view` a button that the mouse and the keyboard can press: it is
+/// reached with Tab, and Enter or Space press it while it has the focus.
+/// floem already turns those keys into a click on the focused view; the key
+/// is then stopped here so the panel keymap does not also see it (Enter
+/// would send the prompt).
+fn pressable(view: impl IntoView, on_click: impl Fn() + 'static) -> impl View {
+    view.into_view()
+        .keyboard_navigable()
+        .on_click_stop(move |_| on_click())
+        .on_event(EventListener::KeyDown, |event| match event {
+            Event::KeyDown(key) if is_activation_key(&key.key.physical_key) => {
+                EventPropagation::Stop
+            }
+            _ => EventPropagation::Continue,
+        })
+}
+
 /// A small text button.
 fn button(
     window_tab_data: Rc<WindowTabData>,
@@ -85,18 +112,19 @@ fn button(
 ) -> impl View {
     let config = window_tab_data.common.config;
     let text: String = text.into();
-    label(move || text.clone())
-        .on_click_stop(move |_| on_click())
-        .style(move |s| {
-            let config = config.get();
-            s.padding_horiz(8.0)
-                .padding_vert(3.0)
-                .margin_right(6.0)
-                .border(1.0)
-                .border_radius(4.0)
-                .border_color(config.color(LapceColor::LAPCE_BORDER))
-                .cursor(CursorStyle::Pointer)
-        })
+    pressable(label(move || text.clone()), on_click).style(move |s| {
+        let config = config.get();
+        s.padding_horiz(8.0)
+            .padding_vert(3.0)
+            .margin_right(6.0)
+            .border(1.0)
+            .border_radius(4.0)
+            .border_color(config.color(LapceColor::LAPCE_BORDER))
+            .cursor(CursorStyle::Pointer)
+            .focus_visible(|s| {
+                s.border_color(config.color(LapceColor::EDITOR_FOCUS))
+            })
+    })
 }
 
 /// Renders the Markdown returned by `text`, which may grow while a reply
@@ -312,27 +340,28 @@ fn send_button(
     on_click: impl Fn() + 'static,
 ) -> impl View {
     let config = window_tab_data.common.config;
-    label(|| "Send".to_string())
-        .on_click_stop(move |_| on_click())
-        .style(move |s| {
-            let config = config.get();
-            s.padding_horiz(18.0)
-                .margin_left(6.0)
-                .items_center()
-                .justify_center()
-                .border(1.0)
-                .border_radius(6.0)
-                .border_color(config.color(LapceColor::LAPCE_BORDER))
-                .cursor(CursorStyle::Pointer)
-                .hover(|s| {
-                    s.background(config.color(LapceColor::PANEL_HOVERED_BACKGROUND))
-                })
-                .active(|s| {
-                    s.background(
-                        config.color(LapceColor::PANEL_HOVERED_ACTIVE_BACKGROUND),
-                    )
-                })
-        })
+    pressable(label(|| "Send".to_string()), on_click).style(move |s| {
+        let config = config.get();
+        s.padding_horiz(18.0)
+            .margin_left(6.0)
+            .items_center()
+            .justify_center()
+            .border(1.0)
+            .border_radius(6.0)
+            .border_color(config.color(LapceColor::LAPCE_BORDER))
+            .cursor(CursorStyle::Pointer)
+            .hover(|s| {
+                s.background(config.color(LapceColor::PANEL_HOVERED_BACKGROUND))
+            })
+            .active(|s| {
+                s.background(
+                    config.color(LapceColor::PANEL_HOVERED_ACTIVE_BACKGROUND),
+                )
+            })
+            .focus_visible(|s| {
+                s.border_color(config.color(LapceColor::EDITOR_FOCUS))
+            })
+    })
 }
 
 /// The list of files matching the `@mention` being typed, shown above the prompt box.
@@ -595,4 +624,25 @@ fn agent_body(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View
         .style(|s| s.size_pct(100.0, 100.0)),
     )
     .style(|s| s.size_pct(100.0, 100.0))
+}
+
+#[cfg(test)]
+mod tests {
+    use floem::keyboard::{KeyCode, PhysicalKey};
+
+    use super::is_activation_key;
+
+    #[test]
+    fn enter_and_space_press_a_focused_button() {
+        for code in [KeyCode::Enter, KeyCode::NumpadEnter, KeyCode::Space] {
+            assert!(is_activation_key(&PhysicalKey::Code(code)));
+        }
+    }
+
+    #[test]
+    fn tab_and_letters_do_not_press_a_button() {
+        for code in [KeyCode::Tab, KeyCode::KeyA, KeyCode::Escape] {
+            assert!(!is_activation_key(&PhysicalKey::Code(code)));
+        }
+    }
 }
