@@ -61,8 +61,8 @@ impl AgentManager {
 
     /// Starts a session, replacing any running one. The session works on `workspace`.
     pub fn start(&mut self, config: AgentServerConfig, workspace: Option<PathBuf>) {
-        self.stop();
         let Some(workspace) = workspace else {
+            self.stop();
             self.emit(AgentEvent::Error {
                 message: "Open a folder before starting the agent".to_string(),
             });
@@ -78,6 +78,11 @@ impl AgentManager {
             });
             *generation
         };
+        // Killed only now: the replaced session is already silenced by the
+        // new generation, so its final Disconnected can never be reported.
+        // Killing it first left a window where it still had the current
+        // generation and its Disconnected got through.
+        self.stop();
         let command = command::resolve_command(&config.command);
         let command_line = command::describe_command(&command, &config.args);
         tracing::info!(
