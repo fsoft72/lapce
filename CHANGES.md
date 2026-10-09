@@ -84,3 +84,4 @@
 - The `@file` mention list is now built on the proxy response thread instead of the UI thread, and capped at `MAX_MENTION_FILES` (50 000, the shallowest files win), so huge workspaces no longer freeze the UI or slow down filtering on every keystroke. A file left out by the cap can't be attached as a mention.
 - OPTIMIZE.md "Toast has no cancellation": already handled by the `toast_seq` generation counter of `AgentData::show_toast` (an old timer only hides its own toast); marked as done without code changes.
 - The agent panel layout values (paddings, gaps, radii, toast position, caret scroll margin) are now named constants next to the existing `INPUT_*` ones; the rendered layout is unchanged.
+- The agent communication log `lapce-agent.log` is now written to the Lapce logs directory instead of the current working directory, so the working tree stays clean. Set `LAPCE_AGENT_LOG_DIR` to write it elsewhere (`LAPCE_AGENT_LOG_DIR=.` restores the old location).

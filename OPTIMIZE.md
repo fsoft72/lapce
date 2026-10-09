@@ -58,7 +58,7 @@
 - [x] **Magic numbers in the agent panel layout** — values like `margin_top(4.0)`, `padding_vert(6.0)`, `inset_bottom(INPUT_HEIGHT + 30.0)` are inline; extract named constants like the existing `INPUT_*` ones.
   - File(s): `lapce-app/src/panel/agent_view.rs`
 
-- [ ] **Local `lapce-agent.log` in the repo root** — it is gitignored, but the log path is hard-wired by name; make the directory configurable or place it in the data dir so the working tree stays clean.
+- [x] **Local `lapce-agent.log` in the repo root** — it is gitignored, but the log path is hard-wired by name; make the directory configurable or place it in the data dir so the working tree stays clean.
   - File(s): `lapce-app/src/app/logging.rs`
 
 - [ ] **Agent UI has no automated tests** — `AgentState` has unit tests, but `edit_in_input`, `rerun` and `send_text` (which touch the editor and the proxy) have none; extract the pure parts or inject a proxy trait so they can be tested.

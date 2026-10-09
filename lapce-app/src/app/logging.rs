@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use lapce_core::directory::Directory;
 use tracing::level_filters::LevelFilter;
 use tracing_appender::non_blocking::WorkerGuard;
@@ -5,9 +7,12 @@ use tracing_subscriber::{filter::Targets, reload::Handle};
 
 use crate::tracing::*;
 
-/// Name of the log file, created in the current working directory, that
-/// records the communication with the AI agent.
+/// Name of the log file that records the communication with the AI agent.
 const AGENT_LOG_FILE_NAME: &str = "lapce-agent.log";
+
+/// Environment variable naming the directory of the agent log. Without it
+/// the log goes to the Lapce logs directory.
+const AGENT_LOG_DIR_ENV: &str = "LAPCE_AGENT_LOG_DIR";
 
 #[inline(always)]
 pub(super) fn logging() -> (Handle<Targets>, Option<WorkerGuard>) {
@@ -77,14 +82,30 @@ pub(super) fn logging() -> (Handle<Targets>, Option<WorkerGuard>) {
     (reload_handle, guard)
 }
 
-/// Opens (appending) the agent log in the current working directory.
-/// Returns `None`, after a note on stderr, when it cannot be opened.
+/// Where the agent log is written: in the directory named by
+/// [`AGENT_LOG_DIR_ENV`] when set and not empty, else in `logs_dir`, else in
+/// the current working directory.
+fn agent_log_path(env_dir: Option<String>, logs_dir: Option<PathBuf>) -> PathBuf {
+    let dir = env_dir
+        .filter(|dir| !dir.is_empty())
+        .map(PathBuf::from)
+        .or(logs_dir)
+        .unwrap_or_default();
+    dir.join(AGENT_LOG_FILE_NAME)
+}
+
+/// Opens (appending) the agent log, see [`agent_log_path`]. Returns `None`,
+/// after a note on stderr, when it cannot be opened.
 fn agent_log_file() -> Option<std::fs::File> {
+    let path = agent_log_path(
+        std::env::var(AGENT_LOG_DIR_ENV).ok(),
+        Directory::logs_directory(),
+    );
     std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(AGENT_LOG_FILE_NAME)
-        .map_err(|err| eprintln!("cannot open {AGENT_LOG_FILE_NAME}: {err}"))
+        .open(&path)
+        .map_err(|err| eprintln!("cannot open {}: {err}", path.display()))
         .ok()
 }
 
@@ -179,5 +200,41 @@ pub fn error_notification(title: &str, msg: &str) {
         .spawn();
     if let Err(err) = result {
         tracing::debug!("can't run notify-send for \"{title}\": {err}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::{AGENT_LOG_FILE_NAME, agent_log_path};
+
+    #[test]
+    fn the_agent_log_goes_to_the_logs_directory_by_default() {
+        let logs = PathBuf::from("/data/lapce/logs");
+        assert_eq!(
+            agent_log_path(None, Some(logs.clone())),
+            logs.join(AGENT_LOG_FILE_NAME)
+        );
+        assert_eq!(
+            agent_log_path(Some(String::new()), Some(logs.clone())),
+            logs.join(AGENT_LOG_FILE_NAME)
+        );
+    }
+
+    #[test]
+    fn the_environment_variable_chooses_the_agent_log_directory() {
+        assert_eq!(
+            agent_log_path(Some(".".to_string()), Some(PathBuf::from("/logs"))),
+            PathBuf::from(".").join(AGENT_LOG_FILE_NAME)
+        );
+    }
+
+    #[test]
+    fn without_a_logs_directory_the_agent_log_uses_the_working_directory() {
+        assert_eq!(
+            agent_log_path(None, None),
+            PathBuf::from(AGENT_LOG_FILE_NAME)
+        );
     }
 }
