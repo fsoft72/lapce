@@ -18,7 +18,7 @@
 - [x] **Single wide `state` signal drives the whole agent panel** — toolbar status, permission bar and transcript all depend on one `AgentState` signal, so any change (e.g. status text) re-evaluates every consumer. Split into focused memos (`status`, `busy`, `current_permission`, `items`).
   - File(s): `lapce-app/src/agent.rs`, `lapce-app/src/panel/agent_view.rs`
 
-- [ ] **`.lock().unwrap()` / `.read().unwrap()` on shared state** — a panic in one thread poisons the lock and cascades into panics in every other thread that touches it, including the proxy. Handle poisoning explicitly (`parking_lot`, or `unwrap_or_else(PoisonError::into_inner)`) and fail with context.
+- [x] **`.lock().unwrap()` / `.read().unwrap()` on shared state** — a panic in one thread poisons the lock and cascades into panics in every other thread that touches it, including the proxy. Handle poisoning explicitly (`parking_lot`, or `unwrap_or_else(PoisonError::into_inner)`) and fail with context.
   - File(s): `lapce-app/src`, `lapce-proxy/src` (3 sites found by grep: locate with `rg "\.(lock|read|write)\(\)\.unwrap"`)
 
 - [ ] **Production `unwrap()` calls** — about 400 `unwrap()` and 19 `expect()` in the crates; many are in tests, but the rest can crash the editor on bad config, keymap or plugin data. Audit non-test code first, starting from the config and keymap loaders, and return errors with context.

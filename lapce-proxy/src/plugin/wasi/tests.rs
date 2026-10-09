@@ -1,9 +1,13 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    io::Write,
+    sync::{Arc, RwLock},
+};
 
 use lapce_rpc::plugin::VoltMetadata;
 use serde_json::{Value, json};
 
-use super::{load_volt, unflatten_map};
+use super::{WasiPipe, load_volt, unflatten_map, wasi_read_string};
 
 #[test]
 fn test_unflatten_map() {
@@ -234,4 +238,21 @@ fn test_load_volt() {
             config: None
         }
     );
+}
+
+#[test]
+fn a_poisoned_pipe_lock_is_recovered_with_its_content() {
+    let pipe = Arc::new(RwLock::new(WasiPipe::new()));
+    let poisoner = pipe.clone();
+    let result = std::thread::spawn(move || {
+        let mut guard = poisoner.write().unwrap();
+        write!(guard, "kept").unwrap();
+        panic!("poison the pipe lock");
+    })
+    .join();
+    assert!(result.is_err());
+    assert!(pipe.is_poisoned());
+
+    assert_eq!(wasi_read_string(&pipe).unwrap(), "kept");
+    assert!(!pipe.is_poisoned());
 }

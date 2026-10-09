@@ -7,7 +7,7 @@ use std::{
     io::{Read, Seek, Write},
     path::{Path, PathBuf},
     process,
-    sync::{Arc, RwLock},
+    sync::{Arc, RwLock, RwLockWriteGuard},
     thread,
 };
 
@@ -77,6 +77,18 @@ impl Seek for WasiPipe {
     fn seek(&mut self, _pos: std::io::SeekFrom) -> std::io::Result<u64> {
         Err(std::io::Error::other("can not seek in a pipe"))
     }
+}
+
+/// Locks a WASI pipe for reading or writing. A pipe is a plain byte buffer
+/// that stays consistent even when a thread panicked while holding it, so a
+/// poisoned lock is recovered instead of spreading the panic to every
+/// thread that talks to the plugin.
+fn lock_pipe(pipe: &RwLock<WasiPipe>) -> RwLockWriteGuard<'_, WasiPipe> {
+    pipe.write().unwrap_or_else(|poisoned| {
+        tracing::warn!("recovering the poisoned lock of a WASI plugin pipe");
+        pipe.clear_poison();
+        poisoned.into_inner()
+    })
 }
 
 pub struct Plugin {
@@ -506,8 +518,7 @@ pub fn start_volt(
                 handle_plugin_server_message(&local_rpc, &msg, &volt_name)
             {
                 if let Ok(msg) = serde_json::to_string(&resp) {
-                    if let Err(err) = writeln!(local_stdin.write().unwrap(), "{msg}")
-                    {
+                    if let Err(err) = writeln!(lock_pipe(&local_stdin), "{msg}") {
                         tracing::error!("{:?}", err);
                     }
                 }
@@ -542,7 +553,7 @@ pub fn start_volt(
                     break;
                 }
                 if let Ok(msg) = serde_json::to_string(&msg) {
-                    if let Err(err) = writeln!(stdin.write().unwrap(), "{msg}") {
+                    if let Err(err) = writeln!(lock_pipe(&stdin), "{msg}") {
                         tracing::error!("{:?}", err);
                     }
                 }
@@ -604,7 +615,7 @@ pub fn start_volt(
 
 fn wasi_read_string(stdout: &Arc<RwLock<WasiPipe>>) -> Result<String> {
     let mut buf = String::new();
-    stdout.write().unwrap().read_to_string(&mut buf)?;
+    lock_pipe(stdout).read_to_string(&mut buf)?;
     Ok(buf)
 }
 
