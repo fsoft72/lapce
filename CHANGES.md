@@ -50,3 +50,7 @@
 - Copying a reply now shows a short "Copied to clipboard" toast over the agent panel.
 - Hid the "Restart to update" entry (and the "No update available" line) in the gear menu and the update notification dot, behind the `SHOW_UPDATE_UI` constant in `title.rs`.
 - Each user prompt in the agent transcript now has an Edit button (moves the prompt back into the input box, replacing its content) and a Rerun button (sends the prompt again).
+
+## Code quality (OPTIMIZE.md)
+
+- Split `lapce-app/src/app.rs` (4344 lines) into `app/editor_tab.rs`, `app/split.rs`, `app/widgets.rs`, `app/palette.rs`, `app/popups.rs`, `app/launch.rs` and `app/menu.rs`. `app.rs` keeps `AppData`, the workbench and the window views; the public functions are re-exported, so `crate::app::*` paths are unchanged.
