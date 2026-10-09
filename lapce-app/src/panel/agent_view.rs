@@ -1,6 +1,8 @@
 //! The AI agent panel: transcript, permission prompt, and input box.
 
 use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
     rc::Rc,
     sync::{
         Arc,
@@ -39,7 +41,7 @@ use crate::{
     agent::{AgentData, AgentItem},
     config::{LapceConfig, color::LapceColor},
     editor::view::editor_view,
-    markdown::{MarkdownContent, parse_markdown},
+    markdown::{MarkdownContent, parse_markdown, split_markdown_blocks},
     window_tab::{Focus, WindowTabData},
 };
 
@@ -97,15 +99,41 @@ fn button(
         })
 }
 
-/// Renders the Markdown returned by `text`, again whenever it changes.
-/// Images are not shown.
+/// Renders the Markdown returned by `text`, which may grow while a reply
+/// streams in. The text is cut into top-level blocks and each block keeps
+/// its view while its content stays the same, so a new chunk only parses and
+/// lays out the last block again. Images are not shown.
 fn markdown_view(
     config: ReadSignal<Arc<LapceConfig>>,
     text: impl Fn() -> String + 'static,
 ) -> impl View {
+    dyn_stack(
+        move || {
+            let text = text();
+            split_markdown_blocks(&text)
+                .into_iter()
+                .map(str::to_string)
+                .enumerate()
+                .collect::<Vec<_>>()
+        },
+        |(index, block)| {
+            let mut hasher = DefaultHasher::new();
+            block.hash(&mut hasher);
+            (*index, hasher.finish())
+        },
+        move |(_, block)| markdown_block_view(config, block),
+    )
+    .style(|s| s.flex_col().width_full().min_width(0.0))
+}
+
+/// Renders one top-level Markdown block, again when the config changes.
+fn markdown_block_view(
+    config: ReadSignal<Arc<LapceConfig>>,
+    block: String,
+) -> impl View {
     let id = AtomicU64::new(0);
     dyn_stack(
-        move || parse_markdown(&text(), MARKDOWN_LINE_HEIGHT, &config.get()),
+        move || parse_markdown(&block, MARKDOWN_LINE_HEIGHT, &config.get()),
         move |_| id.fetch_add(1, Ordering::Relaxed),
         move |content| match content {
             MarkdownContent::Text(text_layout) => container(

@@ -342,3 +342,101 @@ pub fn from_plaintext(
     );
     vec![MarkdownContent::Text(text_layout)]
 }
+
+/// Splits Markdown `text` into top-level blocks that can be parsed one by
+/// one, so a growing text only needs its last block parsed again.
+///
+/// A block starts at a line that is not indented and follows a blank line
+/// outside a fenced code block. Indented lines are never split off, because
+/// they may continue a list item or form an indented code block. The blocks
+/// are contiguous slices: joined together they give back `text`.
+pub fn split_markdown_blocks(text: &str) -> Vec<&str> {
+    let mut blocks = Vec::new();
+    let mut block_start = 0;
+    let mut offset = 0;
+    let mut fence: Option<char> = None;
+    let mut after_blank = false;
+    for line in text.split_inclusive('\n') {
+        let starts_block = fence.is_none()
+            && after_blank
+            && line.starts_with(|c: char| !c.is_whitespace());
+        if starts_block && offset > block_start {
+            blocks.push(&text[block_start..offset]);
+            block_start = offset;
+        }
+        fence = next_fence(fence, line);
+        after_blank = line.trim().is_empty();
+        offset += line.len();
+    }
+    if offset > block_start {
+        blocks.push(&text[block_start..offset]);
+    }
+    blocks
+}
+
+/// The fence character open after `line`, given the one open before it.
+fn next_fence(open: Option<char>, line: &str) -> Option<char> {
+    let indent = line.len() - line.trim_start_matches(' ').len();
+    if indent > 3 {
+        return open;
+    }
+    let marker = line.trim_start_matches(' ');
+    let fence_char = ['`', '~']
+        .into_iter()
+        .find(|c| marker.starts_with(&String::from(*c).repeat(3)));
+    match (open, fence_char) {
+        (None, Some(c)) => Some(c),
+        (Some(open), Some(c)) if open == c => None,
+        (open, _) => open,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::split_markdown_blocks;
+
+    #[test]
+    fn paragraphs_are_split_at_blank_lines() {
+        let text = "one\ntwo\n\nthree\n\n\nfour";
+        assert_eq!(
+            split_markdown_blocks(text),
+            vec!["one\ntwo\n\n", "three\n\n\n", "four"]
+        );
+    }
+
+    #[test]
+    fn blocks_join_back_into_the_text() {
+        let text =
+            "# Title\n\nSome text\n\n- a\n\n  more\n- b\n\n```\nx\n\ny\n```\nend\n";
+        assert_eq!(split_markdown_blocks(text).concat(), text);
+    }
+
+    #[test]
+    fn fenced_code_blocks_are_never_split() {
+        let text = "```rust\nlet a = 1;\n\nlet b = 2;\n```\n\nafter";
+        assert_eq!(
+            split_markdown_blocks(text),
+            vec!["```rust\nlet a = 1;\n\nlet b = 2;\n```\n\n", "after"]
+        );
+    }
+
+    #[test]
+    fn tilde_fences_are_only_closed_by_tildes() {
+        let text = "~~~\n```\n\nstill code\n~~~\n\nafter";
+        assert_eq!(
+            split_markdown_blocks(text),
+            vec!["~~~\n```\n\nstill code\n~~~\n\n", "after"]
+        );
+    }
+
+    #[test]
+    fn indented_continuations_stay_in_their_block() {
+        let text = "- item\n\n  continued\n\n      code\n";
+        assert_eq!(split_markdown_blocks(text), vec![text]);
+    }
+
+    #[test]
+    fn empty_text_has_no_blocks() {
+        assert!(split_markdown_blocks("").is_empty());
+    }
+}

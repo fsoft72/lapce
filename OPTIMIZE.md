@@ -9,7 +9,7 @@
 
 ## High
 
-- [ ] **Re-parse of the whole Markdown reply on every streamed chunk** — `markdown_view` calls `parse_markdown` inside the `dyn_stack` source closure and the item key is a hash of the full text, so each chunk of a streaming reply re-parses and re-lays-out the entire reply (cost grows quadratically with reply length). Parse once per `render_key` change in a memo, or only re-render the trailing block while the turn is busy.
+- [x] **Re-parse of the whole Markdown reply on every streamed chunk** — `markdown_view` calls `parse_markdown` inside the `dyn_stack` source closure and the item key is a hash of the full text, so each chunk of a streaming reply re-parses and re-lays-out the entire reply (cost grows quadratically with reply length). Parse once per `render_key` change in a memo, or only re-render the trailing block while the turn is busy.
   - File(s): `lapce-app/src/panel/agent_view.rs`, `lapce-app/src/agent.rs` (`render_key`)
 
 - [x] **Whole transcript cloned on every state change** — the transcript `dyn_stack` source does `state.items.iter().cloned().enumerate().collect()` each time the state signal fires (including every streamed chunk), cloning every message string. Keep per-item signals, or `Rc<str>`/`Arc<str>` text in `AgentItem`, so unchanged items are not copied.
