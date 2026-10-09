@@ -3,6 +3,8 @@
 
 use std::path::{Path, PathBuf};
 
+use lapce_rpc::agent::AgentContext;
+
 use nucleo::{
     Config, Matcher, Utf32Str,
     pattern::{CaseMatching, Normalization, Pattern},
@@ -106,6 +108,28 @@ pub fn filter_files(files: &[String], query: &str, limit: usize) -> Vec<String> 
         .collect()
 }
 
+/// The whole files mentioned as `@path` in `text`, as contexts under `root`.
+/// Only paths of the workspace list `files` are attached, so a typo or a
+/// path outside the workspace is ignored, and the files already in
+/// `contexts` are skipped.
+pub fn mention_contexts(
+    root: &Path,
+    files: &[String],
+    text: &str,
+    contexts: &[AgentContext],
+) -> Vec<AgentContext> {
+    mentioned_paths(text)
+        .into_iter()
+        .filter(|path| files.iter().any(|file| file == path))
+        .map(|path| root.join(path))
+        .filter(|path| contexts.iter().all(|context| &context.path != path))
+        .map(|path| AgentContext {
+            path,
+            selection: None,
+        })
+        .collect()
+}
+
 /// The paths mentioned in `text` as `@path`, in order, without duplicates.
 pub fn mentioned_paths(text: &str) -> Vec<&str> {
     let mut paths: Vec<&str> = Vec::new();
@@ -197,6 +221,29 @@ mod tests {
         assert_eq!(filter_files(&files, "agent", 8), vec!["src/agent.rs"]);
         assert_eq!(filter_files(&files, "", 2).len(), 2);
         assert!(filter_files(&files, "zzz", 8).is_empty());
+    }
+
+    #[test]
+    fn mention_contexts_attach_known_files_once() {
+        let root = Path::new("/ws");
+        let files = vec!["src/a.rs".to_string(), "src/b.rs".to_string()];
+        let attached = vec![AgentContext {
+            path: PathBuf::from("/ws/src/b.rs"),
+            selection: Some("fn b()".to_string()),
+        }];
+        let contexts = mention_contexts(
+            root,
+            &files,
+            "compare @src/a.rs with @src/b.rs and @missing.rs",
+            &attached,
+        );
+        assert_eq!(
+            contexts,
+            vec![AgentContext {
+                path: PathBuf::from("/ws/src/a.rs"),
+                selection: None,
+            }]
+        );
     }
 
     #[test]

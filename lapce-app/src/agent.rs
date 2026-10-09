@@ -1,11 +1,6 @@
 //! UI state of the AI agent panel.
 
-use std::{
-    collections::VecDeque,
-    path::Path,
-    rc::Rc,
-    time::Duration,
-};
+use std::{collections::VecDeque, path::Path, rc::Rc, time::Duration};
 
 use floem::{
     action::exec_after,
@@ -25,12 +20,12 @@ use lapce_rpc::agent::{
     AgentToolStatus,
 };
 
-use lapce_rpc::proxy::ProxyResponse;
+use lapce_rpc::proxy::{ProxyResponse, ProxyRpcHandler};
 
 use crate::{
     agent_mention::{
         MAX_MENTION_FILES, MAX_MENTION_ITEMS, Mention, filter_files, mention_at_end,
-        mention_files, mentioned_paths,
+        mention_contexts, mention_files,
     },
     command::{CommandExecuted, CommandKind, LapceCommand},
     editor::EditorData,
@@ -324,6 +319,43 @@ impl AgentState {
     }
 }
 
+/// What sending a prompt has to do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PromptPlan {
+    /// A turn is running: the prompt is dropped.
+    Ignore,
+    /// The agent is up or starting: the prompt is sent (the proxy queues it
+    /// while the agent starts).
+    Send,
+    /// No agent is running: it is started, then the prompt is sent.
+    StartThenSend,
+}
+
+/// Decides what sending a prompt does, given whether a turn is running and
+/// the connection status. This is the only place of the "ignore while
+/// busy" rule.
+pub fn plan_prompt(busy: bool, status: &AgentStatus) -> PromptPlan {
+    if busy {
+        return PromptPlan::Ignore;
+    }
+    match status {
+        AgentStatus::Ready | AgentStatus::Starting => PromptPlan::Send,
+        _ => PromptPlan::StartThenSend,
+    }
+}
+
+/// Records the prompt `text` with its `contexts` in the transcript, which
+/// marks the agent busy, and sends it to the agent through `proxy`.
+fn send_prompt(
+    state: RwSignal<AgentState>,
+    proxy: &ProxyRpcHandler,
+    text: String,
+    contexts: Vec<AgentContext>,
+) {
+    state.update(|state| state.push_user(&text, contexts.clone()));
+    proxy.agent_prompt(text, contexts);
+}
+
 /// Focused views of [`AgentState`]. Each memo only notifies its readers when
 /// its own value changes, so a streamed chunk does not re-run the toolbar or
 /// the permission bar, and a status change does not re-run the transcript.
@@ -514,20 +546,11 @@ impl AgentData {
         text: &str,
         contexts: &[AgentContext],
     ) -> Vec<AgentContext> {
-        let Some(root) = self.common.workspace.path.clone() else {
+        let Some(root) = self.common.workspace.path.as_deref() else {
             return Vec::new();
         };
-        let files = self.files.get_untracked();
-        mentioned_paths(text)
-            .into_iter()
-            .filter(|path| files.iter().any(|file| file == path))
-            .map(|path| root.join(path))
-            .filter(|path| contexts.iter().all(|context| &context.path != path))
-            .map(|path| AgentContext {
-                path,
-                selection: None,
-            })
-            .collect()
+        self.files
+            .with_untracked(|files| mention_contexts(root, files, text, contexts))
     }
 
     /// Applies an event coming from the proxy.
@@ -676,14 +699,15 @@ impl AgentData {
     /// `None`, starting the agent first if needed. Does nothing while a turn
     /// is running. Returns whether the prompt was sent.
     fn try_send(&self, text: String, contexts: Option<Vec<AgentContext>>) -> bool {
-        if self.memos.busy.get_untracked() {
-            return false;
-        }
-        let connected = self.memos.status.with_untracked(|status| {
-            matches!(status, AgentStatus::Ready | AgentStatus::Starting)
-        });
-        if !connected {
-            self.restart();
+        let busy = self.memos.busy.get_untracked();
+        let plan = self
+            .memos
+            .status
+            .with_untracked(|status| plan_prompt(busy, status));
+        match plan {
+            PromptPlan::Ignore => return false,
+            PromptPlan::StartThenSend => self.restart(),
+            PromptPlan::Send => {}
         }
         let contexts = contexts.unwrap_or_else(|| {
             let mut contexts = self.active_context();
@@ -691,9 +715,7 @@ impl AgentData {
             contexts.extend(mentioned);
             contexts
         });
-        self.state
-            .update(|state| state.push_user(&text, contexts.clone()));
-        self.common.proxy.agent_prompt(text, contexts);
+        send_prompt(self.state, &self.common.proxy, text, contexts);
         true
     }
 
@@ -1102,6 +1124,59 @@ mod tests {
         );
         assert_eq!(state.user_prompt(1), None, "a reply is not a prompt");
         assert_eq!(state.user_prompt(2), None);
+    }
+
+    #[test]
+    fn a_prompt_is_ignored_while_a_turn_runs() {
+        assert_eq!(plan_prompt(true, &AgentStatus::Ready), PromptPlan::Ignore);
+        let stopped = AgentStatus::Disconnected {
+            reason: "stopped".into(),
+        };
+        assert_eq!(plan_prompt(true, &stopped), PromptPlan::Ignore);
+    }
+
+    #[test]
+    fn a_prompt_starts_the_agent_only_when_it_is_not_running() {
+        assert_eq!(plan_prompt(false, &AgentStatus::Ready), PromptPlan::Send);
+        assert_eq!(plan_prompt(false, &AgentStatus::Starting), PromptPlan::Send);
+        let stopped = AgentStatus::Disconnected {
+            reason: "stopped".into(),
+        };
+        assert_eq!(plan_prompt(false, &stopped), PromptPlan::StartThenSend);
+    }
+
+    #[test]
+    fn send_prompt_records_the_prompt_and_sends_it_to_the_proxy() {
+        use lapce_rpc::proxy::{ProxyNotification, ProxyRpc};
+
+        let cx = Scope::new();
+        let state = cx.create_rw_signal(AgentState::default());
+        let proxy = ProxyRpcHandler::new();
+        let contexts = vec![AgentContext {
+            path: "/ws/a.rs".into(),
+            selection: None,
+        }];
+
+        send_prompt(state, &proxy, "fix it".to_string(), contexts.clone());
+
+        state.with_untracked(|state| {
+            assert!(state.busy);
+            assert_eq!(
+                state.user_prompt(0),
+                Some(("fix it".to_string(), contexts.clone()))
+            );
+        });
+        match proxy.rx().try_recv() {
+            Ok(ProxyRpc::Notification(ProxyNotification::AgentPrompt {
+                text,
+                contexts: sent,
+            })) => {
+                assert_eq!(text, "fix it");
+                assert_eq!(sent, contexts);
+            }
+            _ => panic!("expected an agent prompt notification"),
+        }
+        cx.dispose();
     }
 
     #[test]

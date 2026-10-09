@@ -61,5 +61,5 @@
 - [x] **Local `lapce-agent.log` in the repo root** — it is gitignored, but the log path is hard-wired by name; make the directory configurable or place it in the data dir so the working tree stays clean.
   - File(s): `lapce-app/src/app/logging.rs`
 
-- [ ] **Agent UI has no automated tests** — `AgentState` has unit tests, but `edit_in_input`, `rerun` and `send_text` (which touch the editor and the proxy) have none; extract the pure parts or inject a proxy trait so they can be tested.
+- [x] **Agent UI has no automated tests** — `AgentState` has unit tests, but `edit_in_input`, `rerun` and `send_text` (which touch the editor and the proxy) have none; extract the pure parts or inject a proxy trait so they can be tested.
   - File(s): `lapce-app/src/agent.rs`
