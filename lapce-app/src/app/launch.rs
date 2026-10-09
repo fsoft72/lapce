@@ -198,7 +198,10 @@ pub fn launch() {
     let plugin_paths = Arc::new(cli.plugin_path);
 
     let (tx, rx) = channel();
-    let mut watcher = notify::recommended_watcher(ConfigWatcher::new(tx))
+    let config_watcher = ConfigWatcher::new(tx)
+        .context("Failed to spawn the config watcher thread")
+        .unwrap();
+    let mut watcher = notify::recommended_watcher(config_watcher)
         .context("Failed to spawn file watcher")
         .unwrap();
     if let Some(path) = LapceConfig::settings_file() {

@@ -1,5 +1,6 @@
 #![allow(clippy::manual_clamp)]
 
+pub mod debounce;
 pub mod directory;
 pub mod encoding;
 pub mod language;

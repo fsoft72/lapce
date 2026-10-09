@@ -5,6 +5,7 @@ use std::{
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
+        mpsc,
     },
     thread,
     time::Duration,
@@ -12,7 +13,6 @@ use std::{
 
 use alacritty_terminal::{event::WindowSize, event_loop::Msg};
 use anyhow::{Context, Result, anyhow};
-use crossbeam_channel::Sender;
 use git2::{
     DiffOptions, ErrorCode::NotFound, Oid, Repository, build::CheckoutBuilder,
 };
@@ -20,6 +20,7 @@ use grep_matcher::Matcher;
 use grep_regex::RegexMatcherBuilder;
 use grep_searcher::{SearcherBuilder, sinks::UTF8};
 use indexmap::IndexMap;
+use lapce_core::debounce::spawn_debouncer;
 use lapce_rpc::{
     RequestId, RpcError,
     buffer::BufferId,
@@ -1300,11 +1301,18 @@ impl Dispatcher {
     }
 }
 
+/// How long the workspace must stay unchanged before the changes are handled.
+const WORKSPACE_CHANGE_QUIET_PERIOD: Duration = Duration::from_millis(500);
+
+/// The longest the changes wait while the workspace keeps changing.
+const WORKSPACE_CHANGE_MAX_WAIT: Duration = Duration::from_secs(2);
+
 struct FileWatchNotifier {
     core_rpc: CoreRpcHandler,
     proxy_rpc: ProxyRpcHandler,
     workspace: Option<PathBuf>,
-    workspace_fs_change_handler: Arc<Mutex<Option<Sender<bool>>>>,
+    /// Receives the workspace changes, debounced on a background thread.
+    workspace_fs_change_handler: Mutex<Option<mpsc::Sender<bool>>>,
     last_diff: Arc<Mutex<DiffInfo>>,
 }
 
@@ -1324,7 +1332,7 @@ impl FileWatchNotifier {
             workspace,
             core_rpc,
             proxy_rpc,
-            workspace_fs_change_handler: Arc::new(Mutex::new(None)),
+            workspace_fs_change_handler: Mutex::new(None),
             last_diff: Arc::new(Mutex::new(DiffInfo::default())),
         };
 
@@ -1372,6 +1380,9 @@ impl FileWatchNotifier {
         }
     }
 
+    /// Queues a workspace change. Bursts of changes are debounced, then the
+    /// file explorer is refreshed when files were added, removed or renamed,
+    /// and the git diff is sent when it changed.
     fn handle_workspace_fs_event(&self, event: notify::Event) {
         let explorer_change = match &event.kind {
             notify::EventKind::Create(_)
@@ -1382,53 +1393,49 @@ impl FileWatchNotifier {
         };
 
         let mut handler = self.workspace_fs_change_handler.lock();
-        if let Some(sender) = handler.as_mut() {
-            if explorer_change {
-                // only send the value if we need to update file explorer as well
-                if let Err(err) = sender.send(explorer_change) {
-                    tracing::error!("{:?}", err);
-                }
-            }
+        if handler.is_none() {
+            *handler = self.spawn_workspace_change_debouncer();
+        }
+        let Some(sender) = handler.as_ref() else {
             return;
+        };
+        if let Err(err) = sender.send(explorer_change) {
+            // The debouncer thread is gone: the next change spawns a new one.
+            tracing::error!("{:?}", err);
+            *handler = None;
         }
-        let (sender, receiver) = crossbeam_channel::unbounded();
-        if explorer_change {
-            // only send the value if we need to update file explorer as well
-            if let Err(err) = sender.send(explorer_change) {
-                tracing::error!("{:?}", err);
-            }
-        }
+    }
 
-        let local_handler = self.workspace_fs_change_handler.clone();
+    /// Spawns the thread that handles the debounced workspace changes.
+    /// Returns `None` without a workspace or when the thread cannot start.
+    fn spawn_workspace_change_debouncer(&self) -> Option<mpsc::Sender<bool>> {
+        let workspace = self.workspace.clone()?;
         let core_rpc = self.core_rpc.clone();
-        let workspace = self.workspace.clone().unwrap();
         let last_diff = self.last_diff.clone();
-        thread::spawn(move || {
-            thread::sleep(Duration::from_millis(500));
-
-            {
-                local_handler.lock().take();
-            }
-
-            let mut explorer_change = false;
-            for e in receiver {
-                if e {
-                    explorer_change = true;
-                    break;
+        let debouncer = spawn_debouncer(
+            "WorkspaceChanges",
+            WORKSPACE_CHANGE_QUIET_PERIOD,
+            WORKSPACE_CHANGE_MAX_WAIT,
+            move |explorer_changes: Vec<bool>| {
+                if explorer_changes.contains(&true) {
+                    core_rpc.workspace_file_change();
                 }
-            }
-            if explorer_change {
-                core_rpc.workspace_file_change();
-            }
-            if let Some(diff) = git_diff_new(&workspace) {
-                let mut last_diff = last_diff.lock();
-                if diff != *last_diff {
-                    core_rpc.diff_info(diff.clone());
-                    *last_diff = diff;
+                if let Some(diff) = git_diff_new(&workspace) {
+                    let mut last_diff = last_diff.lock();
+                    if diff != *last_diff {
+                        core_rpc.diff_info(diff.clone());
+                        *last_diff = diff;
+                    }
                 }
+            },
+        );
+        match debouncer {
+            Ok(sender) => Some(sender),
+            Err(err) => {
+                tracing::error!("can't spawn the workspace change thread: {err}");
+                None
             }
-        });
-        *handler = Some(sender);
+        }
     }
 }
 

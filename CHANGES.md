@@ -67,3 +67,9 @@
   - `lapce-proxy/src/plugin/mod.rs`: the 21 `Url::from_file_path(path).unwrap()` calls go through `file_url`, which logs and drops the request for a non-absolute path; a broken zstd plugin archive returns an error with context.
   - `lapce-app/src/config.rs`: `export_theme` returns a `Result` with context (the command logs failures), `load_icon_theme` no longer unwraps the theme directory, and the invariants on the embedded default themes use `expect` with a message.
   - `lapce-app/src/keypress/loader.rs` and `lapce-proxy/src/cli.rs` had no production unwraps left.
+- Replaced the fixed sleeps used for synchronization:
+  - New `lapce_core::debounce::spawn_debouncer`: a thread that waits on a channel and handles each burst of events once it has been quiet for a while (or is too old), without losing events between bursts.
+  - The config file watcher (`config/watcher.rs`) uses it instead of an `AtomicBool` plus a 500 ms sleep, whose window could drop a change made right after a reload was triggered.
+  - The workspace file watcher of the proxy (`dispatch.rs`) uses it instead of a sleeping thread per burst; it no longer panics when there is no workspace.
+  - The agent session `delay` (`agent/session.rs`) waits on a cancel channel instead of sleeping, so its helper thread ends as soon as the delay is dropped.
+  - Kept on purpose: the 500 ms retry when Windows has not released a removed plugin folder yet (`plugin/mod.rs`) and the `try_wait` polling in the `agent/process.rs` tests, which have no event to wait on.

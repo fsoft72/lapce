@@ -181,15 +181,44 @@ async fn drain_stderr(
     }
 }
 
-/// A future that resolves after `duration`, driven by a helper thread
-/// because the session runs on a plain executor without timers.
-fn delay(duration: Duration) -> oneshot::Receiver<()> {
-    let (tx, rx) = oneshot::channel();
+/// A future that resolves after a duration. A helper thread drives it
+/// because the session runs on a plain executor without timers. The thread
+/// waits on a cancel channel instead of sleeping, so dropping the future
+/// (when the awaited event came first) wakes it and ends it at once.
+struct Delay {
+    fired: oneshot::Receiver<()>,
+    /// Dropped with the future, which disconnects the helper thread's wait.
+    _cancel: std::sync::mpsc::Sender<()>,
+}
+
+impl Future for Delay {
+    type Output = ();
+
+    /// Resolves once the helper thread reports the end of the duration.
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<()> {
+        self.fired.poll_unpin(cx).map(|_| ())
+    }
+}
+
+/// A future that resolves after `duration`, or never wakes its helper
+/// thread again once dropped. See [`Delay`].
+fn delay(duration: Duration) -> Delay {
+    let (fired_tx, fired) = oneshot::channel();
+    let (cancel, cancelled) = std::sync::mpsc::channel::<()>();
     std::thread::spawn(move || {
-        std::thread::sleep(duration);
-        let _ = tx.send(());
+        let timed_out = cancelled.recv_timeout(duration)
+            == Err(std::sync::mpsc::RecvTimeoutError::Timeout);
+        if timed_out && fired_tx.send(()).is_err() {
+            tracing::debug!("the delay was dropped when it fired");
+        }
     });
-    rx
+    Delay {
+        fired,
+        _cancel: cancel,
+    }
 }
 
 /// Builds the error reported when the agent process exits while the
@@ -485,6 +514,23 @@ mod tests {
     use lapce_rpc::core::CoreRpc;
 
     use super::*;
+
+    #[test]
+    fn a_delay_resolves_after_its_duration() {
+        let start = std::time::Instant::now();
+        block_on(delay(Duration::from_millis(20)));
+        assert!(start.elapsed() >= Duration::from_millis(20));
+    }
+
+    #[test]
+    fn a_dropped_delay_is_cancelled_before_it_fires() {
+        let delay = delay(Duration::from_secs(60));
+        let mut fired = delay.fired;
+        drop(delay._cancel);
+        // The helper thread wakes on the disconnect and drops its sender
+        // without firing, which cancels the receiver well before a minute.
+        assert!(block_on(&mut fired).is_err());
+    }
 
     /// Builds a session env of generation 1 with the given shared generation.
     fn env_with(generation: Arc<Mutex<u64>>) -> SessionEnv {
