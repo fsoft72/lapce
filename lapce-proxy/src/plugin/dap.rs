@@ -169,9 +169,8 @@ impl DapClient {
 
         process.args(args);
 
-        // CREATE_NO_WINDOW
+        // CREATE_NO_WINDOW, so the debug adapter does not open a console window
         // (https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags)
-        // TODO: We set this because
         #[cfg(target_os = "windows")]
         std::os::windows::process::CommandExt::creation_flags(
             &mut process,

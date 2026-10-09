@@ -71,7 +71,7 @@ impl MainSplitData {
         if let Some(DocumentChanges::Operations(_op)) =
             edit.document_changes.as_ref()
         {
-            // TODO
+            // TODO: apply the create, rename and delete file operations of the edit.
         }
 
         if let Some(edits) = workspace_edits(edit) {

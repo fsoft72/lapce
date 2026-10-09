@@ -775,7 +775,7 @@ impl SyntaxLayers {
                     }
 
                     let depth = layer.depth + 1;
-                    // TODO: can't inline this since matches borrows self.layers
+                    // Not inlined: `matches` borrows `self.layers`.
                     for (config, ranges) in injections {
                         let new_layer = LanguageLayer {
                             tree: None,

@@ -97,22 +97,13 @@ pub(super) fn get_sticky_header_info(
         0.0
     };
 
+    // Only the last painted line scrolls, and it always exists here, so the
+    // scroll offset is taken off the total once.
     let sticky_header_height = sticky_lines
         .iter()
-        .enumerate()
-        .map(|(i, line)| {
-            // TODO(question): won't y_diff always be scroll_offset here? so we should just sub on
-            // the outside
-            let y_diff = if i == total_sticky_lines - 1 {
-                scroll_offset
-            } else {
-                0.0
-            };
-
-            let layout = editor.text_layout(*line);
-            layout.line_count() as f64 * line_height - y_diff
-        })
-        .sum();
+        .map(|line| editor.text_layout(*line).line_count() as f64 * line_height)
+        .sum::<f64>()
+        - scroll_offset;
 
     sticky_header_height_signal.set(sticky_header_height);
     StickyHeaderInfo {

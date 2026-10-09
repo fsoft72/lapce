@@ -802,11 +802,6 @@ impl Doc {
     pub fn clear_text_cache(&self) {
         self.cache_rev.try_update(|cache_rev| {
             *cache_rev += 1;
-
-            // TODO: ???
-            // Update the text layouts within the callback so that those alerted to cache rev
-            // will see the now empty layouts.
-            // self.text_layouts.borrow_mut().clear(*cache_rev, None);
         });
     }
 

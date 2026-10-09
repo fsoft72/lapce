@@ -350,7 +350,7 @@ impl EditorData {
             ScrollCommand::ScrollDown => {
                 self.scroll(true, count.unwrap_or(1), mods);
             }
-            // TODO:
+            // TODO: move the cursor line to the center, top or bottom of the window.
             ScrollCommand::CenterOfWindow => {}
             ScrollCommand::TopOfWindow => {}
             ScrollCommand::BottomOfWindow => {}

@@ -41,7 +41,7 @@
 - [x] **Heavy `.clone()` use** — about 1500 `.clone()` calls across the crates, many on `String`, `PathBuf` and `Vec` in UI closures. Review hot closures (per-frame style and view closures) and prefer `Rc`/`Arc` or borrowed data there.
   - File(s): `lapce-app/src/editor/view.rs`, `lapce-app/src/doc.rs`, `lapce-app/src/main_split.rs`
 
-- [ ] **Unresolved TODO/FIXME backlog** — 124 TODO/FIXME markers, concentrated in the editor core. Triage them into issues or delete the stale ones so the remaining markers mean something.
+- [x] **Unresolved TODO/FIXME backlog** — 124 TODO/FIXME markers, concentrated in the editor core. Triage them into issues or delete the stale ones so the remaining markers mean something.
   - File(s): `lapce-app/src/doc.rs` (16), `lapce-app/src/editor/view.rs` (14), `lapce-app/src/editor.rs` (13), `lapce-core/src/syntax/mod.rs` (9), `lapce-app/src/markdown.rs` (9)
 
 - [ ] **Silently ignored results** — about 20 `let _ =` sites discard `Result` values (channel sends, file writes). Log failures at least at `debug` level so lost events are traceable.

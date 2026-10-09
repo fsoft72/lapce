@@ -334,7 +334,6 @@ impl DocumentPhantom for Doc {
                 // font_family: Some(config.editor.completion_lens_font_family()),
                 bg: None,
                 under_line: None,
-                // TODO: italics?
             });
         if let Some(completion_text) = completion_text {
             text.push(completion_text);
@@ -359,7 +358,6 @@ impl DocumentPhantom for Doc {
                 // font_family: Some(config.editor.completion_lens_font_family()),
                 bg: None,
                 under_line: None,
-                // TODO: italics?
             });
         if let Some(inline_completion_text) = inline_completion_text {
             text.push(inline_completion_text);
