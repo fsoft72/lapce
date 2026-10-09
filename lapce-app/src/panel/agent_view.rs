@@ -61,6 +61,56 @@ const INPUT_WRAP_MARGIN: f64 = 10.0;
 /// Narrowest width the prompt text is ever wrapped at.
 const INPUT_MIN_WRAP_WIDTH: f64 = 50.0;
 
+/// Room kept visible around the caret when the prompt box scrolls to it, as
+/// (horizontal, vertical).
+const CARET_SCROLL_MARGIN: (f64, f64) = (30.0, 10.0);
+
+/// Padding around the toolbar and the prompt row.
+const PANEL_PADDING: f32 = 6.0;
+
+/// Corner radius of the prompt box, the user prompts, the Send button and
+/// the toast.
+const BOX_RADIUS: f32 = 6.0;
+
+/// Padding inside the small text buttons, as (horizontal, vertical).
+const BUTTON_PADDING: (f32, f32) = (8.0, 3.0);
+
+/// Corner radius of the small text buttons.
+const BUTTON_RADIUS: f32 = 4.0;
+
+/// Space between a button and the next one or the prompt box.
+const BUTTON_GAP: f32 = 6.0;
+
+/// Horizontal padding of the Send button.
+const SEND_BUTTON_PADDING_HORIZ: f32 = 18.0;
+
+/// Padding of a transcript entry, as (horizontal, vertical).
+const ITEM_PADDING: (f32, f32) = (10.0, 4.0);
+
+/// Space above a row of buttons, and around a user prompt.
+const ITEM_SPACING: f32 = 4.0;
+
+/// Vertical padding of a user prompt, inside its tinted box.
+const USER_PROMPT_PADDING_VERT: f32 = 6.0;
+
+/// Space above and below a Markdown horizontal rule.
+const SEPARATOR_MARGIN: f32 = 5.0;
+
+/// Padding of the permission bar.
+const PERMISSION_BAR_PADDING: f32 = 8.0;
+
+/// Padding of an entry of the mention list, as (horizontal, vertical).
+const MENTION_ITEM_PADDING: (f32, f32) = (10.0, 3.0);
+
+/// Space between the top of the prompt row and the toast above it.
+const TOAST_GAP_ABOVE_INPUT: f32 = 30.0;
+
+/// Distance of the toast from the left edge of the panel.
+const TOAST_INSET_LEFT: f32 = 10.0;
+
+/// Padding inside the toast, as (horizontal, vertical).
+const TOAST_PADDING: (f32, f32) = (10.0, 5.0);
+
 /// Builds the agent panel.
 pub fn agent_panel(
     window_tab_data: Rc<WindowTabData>,
@@ -114,11 +164,11 @@ fn button(
     let text: String = text.into();
     pressable(label(move || text.clone()), on_click).style(move |s| {
         let config = config.get();
-        s.padding_horiz(8.0)
-            .padding_vert(3.0)
-            .margin_right(6.0)
+        s.padding_horiz(BUTTON_PADDING.0)
+            .padding_vert(BUTTON_PADDING.1)
+            .margin_right(BUTTON_GAP)
             .border(1.0)
-            .border_radius(4.0)
+            .border_radius(BUTTON_RADIUS)
             .border_color(config.color(LapceColor::LAPCE_BORDER))
             .cursor(CursorStyle::Pointer)
             .focus_visible(|s| {
@@ -171,7 +221,7 @@ fn markdown_block_view(
             MarkdownContent::Image { .. } => container(empty()),
             MarkdownContent::Separator => container(empty().style(move |s| {
                 s.width_full()
-                    .margin_vert(5.0)
+                    .margin_vert(SEPARATOR_MARGIN)
                     .height(1.0)
                     .background(config.get().color(LapceColor::LAPCE_BORDER))
             })),
@@ -237,7 +287,7 @@ fn item_view(window_tab_data: Rc<WindowTabData>, index: usize) -> impl View {
                 SystemClipboard::new().put_string(text_untracked());
                 agent.show_toast("Copied to clipboard");
             })
-            .style(|s| s.margin_top(4.0)),
+            .style(|s| s.margin_top(ITEM_SPACING)),
         ))
         .style(|s| s.flex_col().items_start().width_full().min_width(0.0))
         .into_any()
@@ -254,7 +304,7 @@ fn item_view(window_tab_data: Rc<WindowTabData>, index: usize) -> impl View {
                     rerun_agent.rerun(index);
                 }),
             ))
-            .style(|s| s.margin_top(4.0)),
+            .style(|s| s.margin_top(ITEM_SPACING)),
         ))
         .style(|s| s.flex_col().items_start().width_full().min_width(0.0))
         .into_any()
@@ -275,12 +325,12 @@ fn item_view(window_tab_data: Rc<WindowTabData>, index: usize) -> impl View {
         // The user's prompts sit in a tinted box so they stand out from the replies.
         s.flex_col()
             .width_pct(100.0)
-            .padding_horiz(10.0)
-            .padding_vert(4.0)
+            .padding_horiz(ITEM_PADDING.0)
+            .padding_vert(ITEM_PADDING.1)
             .apply_if(is_user, |s| {
-                s.margin_vert(4.0)
-                    .padding_vert(6.0)
-                    .border_radius(6.0)
+                s.margin_vert(ITEM_SPACING)
+                    .padding_vert(USER_PROMPT_PADDING_VERT)
+                    .border_radius(BOX_RADIUS)
                     .background(config.color(LapceColor::PANEL_HOVERED_BACKGROUND))
             })
     })
@@ -320,12 +370,12 @@ fn permission_bar(
                         reject_agent.reply_permission(None);
                     }),
                 ))
-                .style(|s| s.margin_top(4.0)),
+                .style(|s| s.margin_top(ITEM_SPACING)),
             ))
             .style(move |s| {
                 s.flex_col()
                     .width_pct(100.0)
-                    .padding(8.0)
+                    .padding(PERMISSION_BAR_PADDING)
                     .border_top(1.0)
                     .border_color(config.get().color(LapceColor::LAPCE_BORDER))
             })
@@ -342,12 +392,12 @@ fn send_button(
     let config = window_tab_data.common.config;
     pressable(label(|| "Send".to_string()), on_click).style(move |s| {
         let config = config.get();
-        s.padding_horiz(18.0)
-            .margin_left(6.0)
+        s.padding_horiz(SEND_BUTTON_PADDING_HORIZ)
+            .margin_left(BUTTON_GAP)
             .items_center()
             .justify_center()
             .border(1.0)
-            .border_radius(6.0)
+            .border_radius(BOX_RADIUS)
             .border_color(config.color(LapceColor::LAPCE_BORDER))
             .cursor(CursorStyle::Pointer)
             .hover(|s| {
@@ -389,8 +439,8 @@ fn mention_list(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl Vi
                 .style(move |s| {
                     let config = config.get();
                     s.width_pct(100.0)
-                        .padding_horiz(10.0)
-                        .padding_vert(3.0)
+                        .padding_horiz(MENTION_ITEM_PADDING.0)
+                        .padding_vert(MENTION_ITEM_PADDING.1)
                         .cursor(CursorStyle::Pointer)
                         .apply_if(selected.get() == index, |s| {
                             s.background(
@@ -519,7 +569,7 @@ fn input_box(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View 
                 (x, (vline.get() * line_height) as f64),
                 (width, line_height as f64),
             )
-            .inflate(30.0, 10.0)
+            .inflate(CARET_SCROLL_MARGIN.0, CARET_SCROLL_MARGIN.1)
         })
         .style(|s| s.absolute().size_pct(100.0, 100.0))
     })
@@ -530,7 +580,7 @@ fn input_box(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View 
             .height(INPUT_HEIGHT)
             .border(1.0)
             .padding(-1.0)
-            .border_radius(6.0)
+            .border_radius(BOX_RADIUS)
             .border_color(config.color(LapceColor::LAPCE_BORDER))
             .background(config.color(LapceColor::EDITOR_BACKGROUND))
     });
@@ -542,7 +592,7 @@ fn input_box(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View 
     .style(move |s| {
         s.items_stretch()
             .width_pct(100.0)
-            .padding(6.0)
+            .padding(PANEL_PADDING)
             .border_top(1.0)
             .border_color(config.get().color(LapceColor::LAPCE_BORDER))
     })
@@ -567,7 +617,7 @@ fn agent_body(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View
         })
         .style(move |s| s.color(config.get().color(LapceColor::EDITOR_DIM))),
     ))
-    .style(|s| s.padding(6.0).items_center());
+    .style(|s| s.padding(PANEL_PADDING).items_center());
 
     let transcript = scroll(
         dyn_stack(
@@ -597,12 +647,12 @@ fn agent_body(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View
         label(move || toast.get().unwrap_or_default()).style(move |s| {
             let config = config.get();
             s.absolute()
-                .inset_bottom(INPUT_HEIGHT + 30.0)
-                .inset_left(10.0)
-                .padding_horiz(10.0)
-                .padding_vert(5.0)
+                .inset_bottom(INPUT_HEIGHT + TOAST_GAP_ABOVE_INPUT)
+                .inset_left(TOAST_INSET_LEFT)
+                .padding_horiz(TOAST_PADDING.0)
+                .padding_vert(TOAST_PADDING.1)
                 .border(1.0)
-                .border_radius(6.0)
+                .border_radius(BOX_RADIUS)
                 .border_color(config.color(LapceColor::LAPCE_BORDER))
                 .background(config.color(LapceColor::PANEL_BACKGROUND))
                 .apply_if(toast.with(|toast| toast.is_none()), |s| s.hide())

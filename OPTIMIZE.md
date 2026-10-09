@@ -55,7 +55,7 @@
 - [x] **Toast has no cancellation** — `show_toast` schedules a clear after a fixed delay; two quick copies let the first timer hide the second toast early. Track a generation counter and clear only if it still matches.
   - File(s): `lapce-app/src/agent.rs`
 
-- [ ] **Magic numbers in the agent panel layout** — values like `margin_top(4.0)`, `padding_vert(6.0)`, `inset_bottom(INPUT_HEIGHT + 30.0)` are inline; extract named constants like the existing `INPUT_*` ones.
+- [x] **Magic numbers in the agent panel layout** — values like `margin_top(4.0)`, `padding_vert(6.0)`, `inset_bottom(INPUT_HEIGHT + 30.0)` are inline; extract named constants like the existing `INPUT_*` ones.
   - File(s): `lapce-app/src/panel/agent_view.rs`
 
 - [ ] **Local `lapce-agent.log` in the repo root** — it is gitignored, but the log path is hard-wired by name; make the directory configurable or place it in the data dir so the working tree stays clean.
