@@ -1,7 +1,7 @@
 //! `@file` mentions in the agent prompt box: detecting the mention being
 //! typed, filtering the workspace files and collecting the finished mentions.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use nucleo::{
     Config, Matcher, Utf32Str,
@@ -13,6 +13,10 @@ const EXCLUDED_DIRS: [&str; 2] = [".git", "node_modules"];
 
 /// Most files shown in the mention list at once.
 pub const MAX_MENTION_ITEMS: usize = 8;
+
+/// Most workspace files kept for mentions. The list is filtered again on
+/// every keystroke, so huge workspaces keep only their shallowest files.
+pub const MAX_MENTION_FILES: usize = 50_000;
 
 /// A mention being typed: the byte offset of its `@` and the text after it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,6 +51,33 @@ pub fn mention_at_end(before_cursor: &str) -> Option<Mention> {
 pub fn is_excluded(path: &Path) -> bool {
     path.components()
         .any(|part| EXCLUDED_DIRS.iter().any(|dir| part.as_os_str() == *dir))
+}
+
+/// The files of `paths` that can be mentioned: relative to `root`, outside
+/// the excluded directories, sorted. Past `limit` files only the shallowest
+/// ones are kept, so the list stays small enough to filter while typing.
+pub fn mention_files(root: &Path, paths: &[PathBuf], limit: usize) -> Vec<String> {
+    let mut files: Vec<(usize, String)> = paths
+        .iter()
+        .map(|path| path.strip_prefix(root).unwrap_or(path))
+        .filter(|path| !is_excluded(path))
+        .map(|path| {
+            (
+                path.components().count(),
+                path.to_string_lossy().into_owned(),
+            )
+        })
+        .collect();
+    if files.len() > limit {
+        if limit == 0 {
+            return Vec::new();
+        }
+        files.select_nth_unstable(limit - 1);
+        files.truncate(limit);
+    }
+    let mut files: Vec<String> = files.into_iter().map(|(_, file)| file).collect();
+    files.sort();
+    files
 }
 
 /// The best `limit` files matching `query`, best match first. An empty query
@@ -124,6 +155,36 @@ mod tests {
         assert!(is_excluded(Path::new("web/node_modules/a/index.js")));
         assert!(!is_excluded(Path::new("src/git/mod.rs")));
         assert!(!is_excluded(Path::new("src/main.rs")));
+    }
+
+    #[test]
+    fn mention_files_are_relative_sorted_and_without_excluded_dirs() {
+        let root = Path::new("/ws");
+        let paths = [
+            PathBuf::from("/ws/src/main.rs"),
+            PathBuf::from("/ws/.git/HEAD"),
+            PathBuf::from("/ws/README.md"),
+        ];
+        assert_eq!(
+            mention_files(root, &paths, 10),
+            vec!["README.md", "src/main.rs"]
+        );
+    }
+
+    #[test]
+    fn mention_files_keep_the_shallowest_files_past_the_limit() {
+        let root = Path::new("/ws");
+        let paths = [
+            PathBuf::from("/ws/a/b/c/deep.rs"),
+            PathBuf::from("/ws/src/lib.rs"),
+            PathBuf::from("/ws/Cargo.toml"),
+            PathBuf::from("/ws/a/b/mid.rs"),
+        ];
+        assert_eq!(
+            mention_files(root, &paths, 2),
+            vec!["Cargo.toml", "src/lib.rs"]
+        );
+        assert!(mention_files(root, &paths, 0).is_empty());
     }
 
     #[test]

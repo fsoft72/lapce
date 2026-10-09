@@ -2,7 +2,7 @@
 
 use std::{
     collections::VecDeque,
-    path::{Path, PathBuf},
+    path::Path,
     rc::Rc,
     time::Duration,
 };
@@ -29,8 +29,8 @@ use lapce_rpc::proxy::ProxyResponse;
 
 use crate::{
     agent_mention::{
-        MAX_MENTION_ITEMS, Mention, filter_files, is_excluded, mention_at_end,
-        mentioned_paths,
+        MAX_MENTION_FILES, MAX_MENTION_ITEMS, Mention, filter_files, mention_at_end,
+        mention_files, mentioned_paths,
     },
     command::{CommandExecuted, CommandKind, LapceCommand},
     editor::EditorData,
@@ -451,26 +451,20 @@ impl AgentData {
         self.mention.set(mention);
     }
 
-    /// Fetches the workspace files for the mention list, leaving out `.git` and `node_modules`.
+    /// Fetches the workspace files for the mention list, leaving out `.git`
+    /// and `node_modules` and keeping at most [`MAX_MENTION_FILES`]. The list
+    /// is built on the thread of the proxy response, not on the UI thread.
     fn load_files(&self) {
         let Some(root) = self.common.workspace.path.clone() else {
             return;
         };
         let files = self.files;
-        let send =
-            create_ext_action(self.common.scope, move |paths: Vec<PathBuf>| {
-                let mut relative: Vec<String> = paths
-                    .iter()
-                    .map(|path| path.strip_prefix(&root).unwrap_or(path))
-                    .filter(|path| !is_excluded(path))
-                    .map(|path| path.to_string_lossy().into_owned())
-                    .collect();
-                relative.sort();
-                files.set(relative);
-            });
+        let send = create_ext_action(self.common.scope, move |list: Vec<String>| {
+            files.set(list);
+        });
         self.common.proxy.get_files(move |result| {
             if let Ok(ProxyResponse::GetFilesResponse { items }) = result {
-                send(items);
+                send(mention_files(&root, &items, MAX_MENTION_FILES));
             }
         });
     }
