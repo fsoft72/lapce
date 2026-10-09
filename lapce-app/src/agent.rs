@@ -567,6 +567,30 @@ impl AgentData {
         let Some(text) = self.take_input_text() else {
             return;
         };
+        self.send_text(text);
+    }
+
+    /// Sends `text` again as a new prompt, leaving the input box untouched.
+    pub fn rerun(&self, text: String) {
+        if self.state.with_untracked(|state| state.busy) {
+            return;
+        }
+        self.send_text(text);
+    }
+
+    /// Replaces the content of the input box with `text` and puts the caret at its end.
+    pub fn edit_in_input(&self, text: &str) {
+        let doc = self.input.doc();
+        let len = doc.buffer.with_untracked(|buffer| buffer.len());
+        doc.do_raw_edit(&[(Selection::region(0, len), text)], EditType::InsertChars);
+        self.input
+            .cursor()
+            .update(|cursor| cursor.set_insert(Selection::caret(text.len())));
+        self.mention.set(None);
+    }
+
+    /// Pushes `text` to the transcript and sends it to the agent, starting the agent first if needed.
+    fn send_text(&self, text: String) {
         let connected = self.state.with_untracked(|state| {
             matches!(state.status, AgentStatus::Ready | AgentStatus::Starting)
         });

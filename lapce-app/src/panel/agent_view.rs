@@ -155,6 +155,26 @@ fn item_view(window_tab_data: Rc<WindowTabData>, item: AgentItem) -> impl View {
         ))
         .style(|s| s.flex_col().items_start().width_full().min_width(0.0))
         .into_any()
+    } else if is_user {
+        let edit_text = text.clone();
+        let rerun_text = text.clone();
+        let edit_agent = window_tab_data.agent.clone();
+        let rerun_agent = window_tab_data.agent.clone();
+        stack((
+            label(move || text.clone())
+                .style(|s| s.min_width(0.0).flex_grow(1.0f32)),
+            stack((
+                button(window_tab_data.clone(), "Edit", move || {
+                    edit_agent.edit_in_input(&edit_text);
+                }),
+                button(window_tab_data.clone(), "Rerun", move || {
+                    rerun_agent.rerun(rerun_text.clone());
+                }),
+            ))
+            .style(|s| s.margin_top(4.0)),
+        ))
+        .style(|s| s.flex_col().items_start().width_full().min_width(0.0))
+        .into_any()
     } else {
         label(move || text.clone())
             .style(|s| s.min_width(0.0).flex_grow(1.0f32))

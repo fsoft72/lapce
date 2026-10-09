@@ -49,3 +49,4 @@
 - Each agent reply now ends with a Copy button that puts its raw Markdown in the clipboard.
 - Copying a reply now shows a short "Copied to clipboard" toast over the agent panel.
 - Hid the "Restart to update" entry (and the "No update available" line) in the gear menu and the update notification dot, behind the `SHOW_UPDATE_UI` constant in `title.rs`.
+- Each user prompt in the agent transcript now has an Edit button (moves the prompt back into the input box, replacing its content) and a Rerun button (sends the prompt again).
