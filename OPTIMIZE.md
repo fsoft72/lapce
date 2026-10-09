@@ -38,7 +38,7 @@
 - [x] **`too_many_arguments` suppressed in several constructors** — the `#[allow(clippy::too_many_arguments)]` markers (window_tab, catalog, find, settings, terminal view) point at missing parameter structs; introduce context/builder structs instead of silencing the lint.
   - File(s): `lapce-app/src/window_tab.rs`, `lapce-proxy/src/plugin/catalog.rs`, `lapce-app/src/find.rs`, `lapce-app/src/settings.rs`, `lapce-app/src/terminal/view.rs`
 
-- [ ] **Heavy `.clone()` use** — about 1500 `.clone()` calls across the crates, many on `String`, `PathBuf` and `Vec` in UI closures. Review hot closures (per-frame style and view closures) and prefer `Rc`/`Arc` or borrowed data there.
+- [x] **Heavy `.clone()` use** — about 1500 `.clone()` calls across the crates, many on `String`, `PathBuf` and `Vec` in UI closures. Review hot closures (per-frame style and view closures) and prefer `Rc`/`Arc` or borrowed data there.
   - File(s): `lapce-app/src/editor/view.rs`, `lapce-app/src/doc.rs`, `lapce-app/src/main_split.rs`
 
 - [ ] **Unresolved TODO/FIXME backlog** — 124 TODO/FIXME markers, concentrated in the editor core. Triage them into issues or delete the stale ones so the remaining markers mean something.

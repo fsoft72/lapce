@@ -411,8 +411,8 @@ impl EditorView {
         is_local: bool,
         screen_lines: &ScreenLines,
     ) {
-        let e_data = self.editor.clone();
-        let ed = e_data.editor.clone();
+        let e_data = &self.editor;
+        let ed = &e_data.editor;
         let cursor = self.editor.cursor();
         let config = self.editor.common.config;
 
@@ -422,19 +422,14 @@ impl EditorView {
 
         let current_line_color = ed.es.with_untracked(EditorStyle::current_line);
 
-        let breakline = self.debug_breakline.get_untracked().and_then(
-            |(breakline, breakline_path)| {
-                if e_data
-                    .doc()
-                    .content
-                    .with_untracked(|c| c.path() == Some(&breakline_path))
-                {
-                    Some(breakline)
-                } else {
-                    None
-                }
-            },
-        );
+        let breakline = self.debug_breakline.with_untracked(|breakline| {
+            let (breakline, breakline_path) = breakline.as_ref()?;
+            e_data
+                .doc()
+                .content
+                .with_untracked(|c| c.path() == Some(breakline_path))
+                .then_some(*breakline)
+        });
 
         // TODO: check if this is correct
         if let Some(breakline) = breakline {
@@ -514,18 +509,18 @@ impl EditorView {
         // within insert cursor. It would be good to deduplicate it.
         if find_visual {
             doc.update_find();
-            for region in occurrences.with_untracked(|selection| {
-                selection.regions_in_range(start, end).to_vec()
-            }) {
-                self.paint_find_region(
-                    cx,
-                    ed,
-                    &region,
-                    color,
-                    screen_lines,
-                    line_height,
-                );
-            }
+            occurrences.with_untracked(|selection| {
+                for region in selection.regions_in_range(start, end) {
+                    self.paint_find_region(
+                        cx,
+                        ed,
+                        region,
+                        color,
+                        screen_lines,
+                        line_height,
+                    );
+                }
+            });
         }
 
         self.editor.on_screen_find.with_untracked(|find| {
@@ -631,7 +626,29 @@ impl EditorView {
         let start_info = screen_lines.vline_info(*start_vline).unwrap();
         let start_line = start_info.rvline.line;
 
-        let sticky_header_info = self.editor.sticky_header_info.get_untracked();
+        self.editor
+            .sticky_header_info
+            .with_untracked(|sticky_header_info| {
+                self.paint_sticky_lines(
+                    cx,
+                    viewport,
+                    line_height,
+                    start_line,
+                    sticky_header_info,
+                );
+            });
+    }
+
+    /// Paints the sticky header lines of `sticky_header_info` over the top of the viewport.
+    fn paint_sticky_lines(
+        &self,
+        cx: &mut PaintCx,
+        viewport: Rect,
+        line_height: usize,
+        start_line: usize,
+        sticky_header_info: &StickyHeaderInfo,
+    ) {
+        let config = self.editor.common.config.get_untracked();
         let total_sticky_lines = sticky_header_info.sticky_lines.len();
 
         let paint_last_line = total_sticky_lines > 0
@@ -684,7 +701,6 @@ impl EditorView {
             config.color(LapceColor::EDITOR_STICKY_HEADER_BACKGROUND),
             0.0,
         );
-        self.editor.sticky_header_info.get_untracked();
         // Paint lines
         let mut y_accum = 0.0;
         for (i, line) in sticky_header_info.sticky_lines.iter().copied().enumerate()

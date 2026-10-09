@@ -316,18 +316,18 @@ impl DocumentPhantom for Doc {
 
         text.append(&mut diag_text);
 
+        // The completion texts are only cloned for the line that shows them:
+        // this runs for every line laid out.
         let (completion_line, completion_col) = self.completion_pos.get_untracked();
-        let completion_text = config
-            .editor
-            .enable_completion_lens
-            .then_some(())
-            .and(self.completion_lens.get_untracked())
+        let completion_text = (config.editor.enable_completion_lens
+            && line == completion_line)
+            .then(|| self.completion_lens.get_untracked())
+            .flatten()
             // TODO: We're probably missing on various useful completion things to include here!
-            .filter(|_| line == completion_line)
             .map(|completion| PhantomText {
                 kind: PhantomTextKind::Completion,
                 col: completion_col,
-                text: completion.clone(),
+                text: completion,
                 fg: Some(config.color(LapceColor::COMPLETION_LENS_FOREGROUND)),
                 font_size: Some(config.editor.completion_lens_font_size()),
                 affinity: Some(CursorAffinity::Backward),
@@ -345,16 +345,14 @@ impl DocumentPhantom for Doc {
         // can
         let (inline_completion_line, inline_completion_col) =
             self.inline_completion_pos.get_untracked();
-        let inline_completion_text = config
-            .editor
-            .enable_inline_completion
-            .then_some(())
-            .and(self.inline_completion.get_untracked())
-            .filter(|_| line == inline_completion_line)
+        let inline_completion_text = (config.editor.enable_inline_completion
+            && line == inline_completion_line)
+            .then(|| self.inline_completion.get_untracked())
+            .flatten()
             .map(|completion| PhantomText {
                 kind: PhantomTextKind::Completion,
                 col: inline_completion_col,
-                text: completion.clone(),
+                text: completion,
                 affinity: Some(CursorAffinity::Backward),
                 fg: Some(config.color(LapceColor::COMPLETION_LENS_FOREGROUND)),
                 font_size: Some(config.editor.completion_lens_font_size()),
