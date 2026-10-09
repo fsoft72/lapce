@@ -156,7 +156,9 @@ impl AgentManager {
     /// Cancels the running turn.
     pub fn cancel(&self) {
         let Some(tx) = &self.cmd_tx else { return };
-        let _ = tx.unbounded_send(SessionCommand::Cancel);
+        if tx.unbounded_send(SessionCommand::Cancel).is_err() {
+            tracing::debug!("cancel ignored: the agent session already ended");
+        }
     }
 
     /// Answers a pending permission request. `None` rejects it.

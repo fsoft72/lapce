@@ -151,23 +151,27 @@ pub fn extract(src: &Path, _process_path: &Path) -> Result<PathBuf> {
     Ok(src.to_path_buf())
 }
 
+/// Replaces the current process with the new Lapce at `path`. Only
+/// returns when that fails.
 #[cfg(target_os = "macos")]
 pub fn restart(path: &Path) -> Result<()> {
     use std::os::unix::process::CommandExt;
-    let _ = std::process::Command::new("open")
+    let err = std::process::Command::new("open")
         .arg("-n")
         .arg(path)
         .arg("--args")
         .arg("-n")
         .exec();
-    Ok(())
+    Err(anyhow::Error::new(err).context(format!("can't restart {}", path.display())))
 }
 
+/// Replaces the current process with the new Lapce at `path`. Only
+/// returns when that fails.
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd"))]
 pub fn restart(path: &Path) -> Result<()> {
     use std::os::unix::process::CommandExt;
-    let _ = std::process::Command::new(path).arg("-n").exec();
-    Ok(())
+    let err = std::process::Command::new(path).arg("-n").exec();
+    Err(anyhow::Error::new(err).context(format!("can't restart {}", path.display())))
 }
 
 #[cfg(all(target_os = "windows", feature = "portable"))]

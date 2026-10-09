@@ -160,9 +160,11 @@ pub(super) fn error_modal(title: &str, msg: &str) -> i32 {
     result
 }
 
+/// Shows a desktop notification for an error. A missing `notify-send` is
+/// only logged, since this already reports another failure.
 #[cfg(unix)]
 pub fn error_notification(title: &str, msg: &str) {
-    let _ = std::process::Command::new("notify-send")
+    let result = std::process::Command::new("notify-send")
         .args([
             "-a",
             "dev.lapce.lapce",
@@ -175,4 +177,7 @@ pub fn error_notification(title: &str, msg: &str) {
             msg,
         ])
         .spawn();
+    if let Err(err) = result {
+        tracing::debug!("can't run notify-send for \"{title}\": {err}");
+    }
 }

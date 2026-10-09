@@ -44,7 +44,7 @@
 - [x] **Unresolved TODO/FIXME backlog** — 124 TODO/FIXME markers, concentrated in the editor core. Triage them into issues or delete the stale ones so the remaining markers mean something.
   - File(s): `lapce-app/src/doc.rs` (16), `lapce-app/src/editor/view.rs` (14), `lapce-app/src/editor.rs` (13), `lapce-core/src/syntax/mod.rs` (9), `lapce-app/src/markdown.rs` (9)
 
-- [ ] **Silently ignored results** — about 20 `let _ =` sites discard `Result` values (channel sends, file writes). Log failures at least at `debug` level so lost events are traceable.
+- [x] **Silently ignored results** — about 20 `let _ =` sites discard `Result` values (channel sends, file writes). Log failures at least at `debug` level so lost events are traceable.
   - File(s): `rg "let _ ="` over `lapce-app/src` and `lapce-proxy/src`
 
 ## Low / Nice to have
