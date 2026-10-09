@@ -54,3 +54,4 @@
 ## Code quality (OPTIMIZE.md)
 
 - Split `lapce-app/src/app.rs` (4344 lines) into `app/editor_tab.rs`, `app/split.rs`, `app/widgets.rs`, `app/palette.rs`, `app/popups.rs`, `app/launch.rs` and `app/menu.rs`. `app.rs` keeps `AppData`, the workbench and the window views; the public functions are re-exported, so `crate::app::*` paths are unchanged.
+- Split `lapce-app/src/editor.rs` (3926 lines): the `EditorData` methods now live in `editor/commands.rs` (command handling and `KeyPressFocus`), `editor/navigation.rs`, `editor/completion.rs`, `editor/search.rs` and `editor/pointer.rs`; `compute_screen_lines` moved to `editor/screen_lines.rs` and is re-exported.
