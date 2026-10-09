@@ -548,6 +548,10 @@ impl PluginServerRpcHandler {
     }
 }
 
+/// Handles one JSON-RPC message sent by a plugin server. Requests are
+/// answered with the returned message; notifications and responses return
+/// `None`. Malformed messages are logged and dropped instead of panicking,
+/// because their content comes from a third-party process.
 pub fn handle_plugin_server_message(
     server_rpc: &PluginServerRpcHandler,
     message: &str,
@@ -555,16 +559,27 @@ pub fn handle_plugin_server_message(
 ) -> Option<JsonRpc> {
     match JsonRpc::parse(message) {
         Ok(value @ JsonRpc::Request(_)) => {
+            let (Some(id), Some(method)) = (value.get_id(), value.get_method())
+            else {
+                tracing::error!("{from} sent a request without id or method");
+                return None;
+            };
             let (tx, rx) = crossbeam_channel::bounded(1);
-            let id = value.get_id().unwrap();
             let rpc = PluginServerRpc::HostRequest {
                 id: id.clone(),
-                method: value.get_method().unwrap().to_string(),
-                params: value.get_params().unwrap(),
+                method: method.to_string(),
+                params: value.get_params().unwrap_or(Params::None(())),
                 resp: ResponseSender::new(tx),
             };
             server_rpc.handle_rpc(rpc);
-            let result = rx.recv().unwrap();
+            let result = rx.recv().unwrap_or_else(|_| {
+                Err(RpcError {
+                    code: 0,
+                    message: format!(
+                        "the host dropped the request {method} without answering"
+                    ),
+                })
+            });
             let resp = match result {
                 Ok(v) => JsonRpc::success(id, &v),
                 Err(e) => JsonRpc::error(
@@ -579,23 +594,34 @@ pub fn handle_plugin_server_message(
             Some(resp)
         }
         Ok(value @ JsonRpc::Notification(_)) => {
+            let Some(method) = value.get_method() else {
+                tracing::error!("{from} sent a notification without method");
+                return None;
+            };
             let rpc = PluginServerRpc::HostNotification {
-                method: value.get_method().unwrap().to_string(),
-                params: value.get_params().unwrap(),
+                method: method.to_string(),
+                params: value.get_params().unwrap_or(Params::None(())),
                 from: from.to_string(),
             };
             server_rpc.handle_rpc(rpc);
             None
         }
         Ok(value @ JsonRpc::Success(_)) => {
-            let result = value.get_result().unwrap().clone();
-            server_rpc.handle_server_response(value.get_id().unwrap(), Ok(result));
+            let (Some(id), Some(result)) = (value.get_id(), value.get_result())
+            else {
+                tracing::error!("{from} sent a response without id or result");
+                return None;
+            };
+            server_rpc.handle_server_response(id, Ok(result.clone()));
             None
         }
         Ok(value @ JsonRpc::Error(_)) => {
-            let error = value.get_error().unwrap();
+            let (Some(id), Some(error)) = (value.get_id(), value.get_error()) else {
+                tracing::error!("{from} sent an error without id or error");
+                return None;
+            };
             server_rpc.handle_server_response(
-                value.get_id().unwrap(),
+                id,
                 Err(RpcError {
                     code: error.code,
                     message: error.message.clone(),
@@ -678,13 +704,10 @@ impl PluginHostHandler {
                 for filter in self.document_selector.iter() {
                     if (filter.language_id.is_none()
                         || filter.language_id.as_deref() == Some(language_id))
-                        && (path.is_none()
-                            || filter.pattern.is_none()
-                            || filter
-                                .pattern
-                                .as_ref()
-                                .unwrap()
-                                .is_match(path.as_ref().unwrap()))
+                        && match (&filter.pattern, &path) {
+                            (Some(pattern), Some(path)) => pattern.is_match(path),
+                            _ => true,
+                        }
                     {
                         return true;
                     }
@@ -889,8 +912,10 @@ impl PluginHostHandler {
             for filter in options.filters.iter() {
                 if (filter.language_id.is_none()
                     || filter.language_id.as_deref() == Some(language_id))
-                    && (filter.pattern.is_none()
-                        || filter.pattern.as_ref().unwrap().is_match(path))
+                    && filter
+                        .pattern
+                        .as_ref()
+                        .is_none_or(|pattern| pattern.is_match(path))
                 {
                     return (true, options.include_text);
                 }
@@ -1436,5 +1461,81 @@ fn semantic_tokens_legend(
         SemanticTokensServerCapabilities::SemanticTokensRegistrationOptions(
             options,
         ) => &options.semantic_tokens_options.legend,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use jsonrpc_lite::{Id, JsonRpc, Params};
+    use lapce_rpc::plugin::VoltID;
+
+    use super::{
+        PluginHandlerNotification, PluginServerRpc, PluginServerRpcHandler,
+        handle_plugin_server_message,
+    };
+
+    /// A handler whose initialize notification was already consumed.
+    fn handler() -> PluginServerRpcHandler {
+        let (io_tx, _io_rx) = crossbeam_channel::unbounded();
+        let volt_id = VoltID {
+            author: "test".to_string(),
+            name: "plugin".to_string(),
+        };
+        let handler = PluginServerRpcHandler::new(volt_id, None, None, io_tx);
+        assert!(matches!(
+            handler.rpc_rx.try_recv(),
+            Ok(PluginServerRpc::Handler(
+                PluginHandlerNotification::Initialize
+            ))
+        ));
+        handler
+    }
+
+    #[test]
+    fn a_notification_without_params_is_forwarded_with_no_params() {
+        let handler = handler();
+        let message = r#"{"jsonrpc":"2.0","method":"host/ping"}"#;
+        assert!(handle_plugin_server_message(&handler, message, "test").is_none());
+        match handler.rpc_rx.try_recv() {
+            Ok(PluginServerRpc::HostNotification { method, params, .. }) => {
+                assert_eq!(method, "host/ping");
+                assert_eq!(params, Params::None(()));
+            }
+            _ => panic!("expected a host notification"),
+        }
+    }
+
+    #[test]
+    fn a_request_dropped_by_the_host_is_answered_with_an_error() {
+        let handler = handler();
+        let rpc_rx = handler.rpc_rx.clone();
+        // Plays the host: takes the request and drops it without answering.
+        let host = std::thread::spawn(move || {
+            let request = rpc_rx.recv().unwrap();
+            assert!(matches!(request, PluginServerRpc::HostRequest { .. }));
+        });
+        let message =
+            r#"{"jsonrpc":"2.0","id":7,"method":"workspace/workspaceFolders"}"#;
+        let response = handle_plugin_server_message(&handler, message, "test");
+        host.join().unwrap();
+        match response {
+            Some(response @ JsonRpc::Error(_)) => {
+                assert_eq!(response.get_id(), Some(Id::Num(7)));
+            }
+            _ => panic!("expected an error response"),
+        }
+    }
+
+    #[test]
+    fn responses_without_a_pending_request_are_ignored() {
+        let handler = handler();
+        for message in [
+            r#"{"jsonrpc":"2.0","id":1,"result":null}"#,
+            r#"{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"parse"}}"#,
+        ] {
+            assert!(
+                handle_plugin_server_message(&handler, message, "test").is_none()
+            );
+        }
     }
 }

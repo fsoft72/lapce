@@ -398,15 +398,19 @@ impl MainSplitData {
         self.get_editor_tab_child(EditorTabChildSource::NewFileEditor, false, false)
     }
 
+    /// Opens a new file holding the current theme in TOML.
     pub fn export_theme(&self) {
+        let theme = match self.common.config.get_untracked().export_theme() {
+            Ok(theme) => theme,
+            Err(err) => {
+                tracing::error!("failed to export the theme: {err:?}");
+                return;
+            }
+        };
         let child = self.new_file();
         if let EditorTabChild::Editor(id) = child {
             if let Some(editor) = self.editors.editor_untracked(id) {
-                let doc = editor.doc();
-                doc.reload(
-                    Rope::from(self.common.config.get_untracked().export_theme()),
-                    true,
-                );
+                editor.doc().reload(Rope::from(theme), true);
             }
         }
     }

@@ -5,6 +5,7 @@ use std::{
 };
 
 use ::core::slice;
+use anyhow::Context;
 use floem::{peniko::Color, prelude::palette::css};
 use itertools::Itertools;
 use lapce_core::directory::Directory;
@@ -62,13 +63,13 @@ static DEFAULT_DARK_THEME_CONFIG: Lazy<config::Config> = Lazy::new(|| {
             config::FileFormat::Toml,
         ))
         .build()
-        .unwrap()
+        .expect("the embedded dark-theme.toml must be valid TOML")
 });
 
 /// The default theme is the dark theme.
 static DEFAULT_DARK_THEME_COLOR_CONFIG: Lazy<ColorThemeConfig> = Lazy::new(|| {
-    let (_, theme) =
-        LapceConfig::load_color_theme_from_str(DEFAULT_DARK_THEME).unwrap();
+    let (_, theme) = LapceConfig::load_color_theme_from_str(DEFAULT_DARK_THEME)
+        .expect("the embedded dark-theme.toml must have a color theme name");
     theme.get::<ColorThemeConfig>("color-theme")
     .expect("Failed to load default dark theme. This is likely due to a missing or misnamed field in dark-theme.toml")
 });
@@ -80,7 +81,7 @@ static DEFAULT_ICON_THEME_CONFIG: Lazy<config::Config> = Lazy::new(|| {
             config::FileFormat::Toml,
         ))
         .build()
-        .unwrap()
+        .expect("the embedded icon-theme.toml must be valid TOML")
 });
 static DEFAULT_ICON_THEME_ICON_CONFIG: Lazy<IconThemeConfig> = Lazy::new(|| {
     DEFAULT_ICON_THEME_CONFIG.get::<IconThemeConfig>("icon-theme")
@@ -609,21 +610,27 @@ impl LapceConfig {
         let name = table.get("name")?.to_string();
         Some((
             name.to_lowercase(),
-            (name, config, path.parent().unwrap().to_path_buf()),
+            (name, config, path.parent()?.to_path_buf()),
         ))
     }
 
-    pub fn export_theme(&self) -> String {
+    /// The current color theme and UI settings as a TOML theme file.
+    pub fn export_theme(&self) -> anyhow::Result<String> {
         let mut table = toml::value::Table::new();
         let mut theme = self.color_theme.clone();
         theme.name = "".to_string();
         table.insert(
             "color-theme".to_string(),
-            toml::Value::try_from(&theme).unwrap(),
+            toml::Value::try_from(&theme)
+                .context("can't convert the color theme to TOML")?,
         );
-        table.insert("ui".to_string(), toml::Value::try_from(&self.ui).unwrap());
+        table.insert(
+            "ui".to_string(),
+            toml::Value::try_from(&self.ui)
+                .context("can't convert the UI settings to TOML")?,
+        );
         let value = toml::Value::Table(table);
-        toml::to_string_pretty(&value).unwrap()
+        toml::to_string_pretty(&value).context("can't format the exported theme")
     }
 
     pub fn settings_file() -> Option<PathBuf> {
@@ -665,7 +672,15 @@ impl LapceConfig {
         });
 
         svg.unwrap_or_else(|| {
-            let name = DEFAULT_ICON_THEME_ICON_CONFIG.ui.get(icon).unwrap();
+            let name =
+                DEFAULT_ICON_THEME_ICON_CONFIG
+                    .ui
+                    .get(icon)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "the embedded icon-theme.toml has no `{icon}` UI icon"
+                        )
+                    });
             self.svg_store.write().get_default_svg(name)
         })
     }
@@ -846,7 +861,8 @@ impl LapceConfig {
                 if (*index as usize) < NAMED_COLORS.len() {
                     self.terminal_get_named_color(&NAMED_COLORS[*index as usize])
                 } else {
-                    self.terminal.indexed_colors.get(index).cloned().unwrap()
+                    // `get_indexed_colors` fills every index from 16 to 255.
+                    self.terminal.indexed_colors[index]
                 }
             }
         }
@@ -1205,5 +1221,24 @@ command = "sh"
         let config = LapceConfig::load_merged_from(None, None, None, None).unwrap();
         assert_eq!(config.agent.default_server, "claude-code");
         assert_eq!(config.agent.servers["claude-code"].command, "npx");
+    }
+
+    #[test]
+    fn the_default_theme_exports_as_toml() {
+        let exported = DEFAULT_LAPCE_CONFIG.export_theme().unwrap();
+        assert!(exported.contains("[color-theme"));
+        assert!(exported.contains("[ui]"));
+    }
+
+    #[test]
+    fn an_icon_theme_without_a_name_is_skipped() {
+        let dir = temp_dir("icon-theme");
+        let theme = dir.join("icon-theme.toml");
+        fs::write(&theme, "[icon-theme]\n").unwrap();
+        assert!(LapceConfig::load_icon_theme(&theme).is_none());
+        fs::write(&theme, "[icon-theme]\nname = \"Mine\"\n").unwrap();
+        let (key, (name, _, path)) = LapceConfig::load_icon_theme(&theme).unwrap();
+        assert_eq!((key.as_str(), name.as_str()), ("mine", "Mine"));
+        assert_eq!(path, dir);
     }
 }

@@ -16,7 +16,7 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use crossbeam_channel::{Receiver, Sender};
 use dyn_clone::DynClone;
 use flate2::read::GzDecoder;
@@ -502,8 +502,10 @@ impl PluginCatalogRpcHandler {
     }
 
     pub fn did_save_text_document(&self, path: &Path, text: Rope) {
-        let text_document =
-            TextDocumentIdentifier::new(Url::from_file_path(path).unwrap());
+        let Some(uri) = file_url(path) else {
+            return;
+        };
+        let text_document = TextDocumentIdentifier::new(uri);
         let language_id = language_id_from_path(path).unwrap_or("").to_string();
         if let Err(err) =
             self.plugin_tx.send(PluginCatalogRpc::DidSaveTextDocument {
@@ -525,10 +527,10 @@ impl PluginCatalogRpcHandler {
         text: Rope,
         new_text: Rope,
     ) {
-        let document = VersionedTextDocumentIdentifier::new(
-            Url::from_file_path(path).unwrap(),
-            rev as i32,
-        );
+        let Some(uri) = file_url(path) else {
+            return;
+        };
+        let document = VersionedTextDocumentIdentifier::new(uri, rev as i32);
         let language_id = language_id_from_path(path).unwrap_or("").to_string();
         if let Err(err) =
             self.plugin_tx
@@ -553,7 +555,9 @@ impl PluginCatalogRpcHandler {
         + Send
         + 'static,
     ) {
-        let uri = Url::from_file_path(path).unwrap();
+        let Some(uri) = file_url(path) else {
+            return;
+        };
         let method = GotoDefinition::METHOD;
         let params = GotoDefinitionParams {
             text_document_position_params: TextDocumentPositionParams {
@@ -584,7 +588,9 @@ impl PluginCatalogRpcHandler {
         + Send
         + 'static,
     ) {
-        let uri = Url::from_file_path(path).unwrap();
+        let Some(uri) = file_url(path) else {
+            return;
+        };
         let method = GotoTypeDefinition::METHOD;
         let params = GotoTypeDefinitionParams {
             text_document_position_params: TextDocumentPositionParams {
@@ -644,7 +650,9 @@ impl PluginCatalogRpcHandler {
         + Send
         + 'static,
     ) {
-        let uri = Url::from_file_path(path).unwrap();
+        let Some(uri) = file_url(path) else {
+            return;
+        };
         let method = CallHierarchyPrepare::METHOD;
         let params = CallHierarchyPrepareParams {
             text_document_position_params: TextDocumentPositionParams {
@@ -674,7 +682,9 @@ impl PluginCatalogRpcHandler {
         + Send
         + 'static,
     ) {
-        let uri = Url::from_file_path(path).unwrap();
+        let Some(uri) = file_url(path) else {
+            return;
+        };
         let method = References::METHOD;
         let params = ReferenceParams {
             text_document_position: TextDocumentPositionParams {
@@ -709,7 +719,9 @@ impl PluginCatalogRpcHandler {
         + Send
         + 'static,
     ) {
-        let uri = Url::from_file_path(path).unwrap();
+        let Some(uri) = file_url(path) else {
+            return;
+        };
         let method = FoldingRangeRequest::METHOD;
         let params = FoldingRangeParams {
             text_document: TextDocumentIdentifier { uri },
@@ -737,7 +749,9 @@ impl PluginCatalogRpcHandler {
         + Send
         + 'static,
     ) {
-        let uri = Url::from_file_path(path).unwrap();
+        let Some(uri) = file_url(path) else {
+            return;
+        };
         let method = GotoImplementation::METHOD;
         let params = GotoTypeDefinitionParams {
             text_document_position_params: TextDocumentPositionParams {
@@ -769,7 +783,9 @@ impl PluginCatalogRpcHandler {
         + Send
         + 'static,
     ) {
-        let uri = Url::from_file_path(path).unwrap();
+        let Some(uri) = file_url(path) else {
+            return;
+        };
         let method = CodeActionRequest::METHOD;
         let params = CodeActionParams {
             text_document: TextDocumentIdentifier { uri },
@@ -804,7 +820,9 @@ impl PluginCatalogRpcHandler {
         + Send
         + 'static,
     ) {
-        let uri = Url::from_file_path(path).unwrap();
+        let Some(uri) = file_url(path) else {
+            return;
+        };
         let method = CodeLensRequest::METHOD;
         let params = CodeLensParams {
             text_document: TextDocumentIdentifier { uri },
@@ -852,7 +870,9 @@ impl PluginCatalogRpcHandler {
         + Send
         + 'static,
     ) {
-        let uri = Url::from_file_path(path).unwrap();
+        let Some(uri) = file_url(path) else {
+            return;
+        };
         let method = InlayHintRequest::METHOD;
         let params = InlayHintParams {
             text_document: TextDocumentIdentifier { uri },
@@ -880,7 +900,9 @@ impl PluginCatalogRpcHandler {
         + Send
         + 'static,
     ) {
-        let uri = Url::from_file_path(path).unwrap();
+        let Some(uri) = file_url(path) else {
+            return;
+        };
         let method = InlineCompletionRequest::METHOD;
         let params = InlineCompletionParams {
             text_document_position: TextDocumentPositionParams {
@@ -912,7 +934,9 @@ impl PluginCatalogRpcHandler {
         + Send
         + 'static,
     ) {
-        let uri = Url::from_file_path(path).unwrap();
+        let Some(uri) = file_url(path) else {
+            return;
+        };
         let method = DocumentSymbolRequest::METHOD;
         let params = DocumentSymbolParams {
             text_document: TextDocumentIdentifier { uri },
@@ -955,7 +979,9 @@ impl PluginCatalogRpcHandler {
         + Send
         + 'static,
     ) {
-        let uri = Url::from_file_path(path).unwrap();
+        let Some(uri) = file_url(path) else {
+            return;
+        };
         let method = Formatting::METHOD;
         let params = DocumentFormattingParams {
             text_document: TextDocumentIdentifier { uri },
@@ -986,7 +1012,9 @@ impl PluginCatalogRpcHandler {
         + Send
         + 'static,
     ) {
-        let uri = Url::from_file_path(path).unwrap();
+        let Some(uri) = file_url(path) else {
+            return;
+        };
         let method = PrepareRenameRequest::METHOD;
         let params = TextDocumentPositionParams {
             text_document: TextDocumentIdentifier { uri },
@@ -1013,7 +1041,9 @@ impl PluginCatalogRpcHandler {
         + Send
         + 'static,
     ) {
-        let uri = Url::from_file_path(path).unwrap();
+        let Some(uri) = file_url(path) else {
+            return;
+        };
         let method = Rename::METHOD;
         let params = RenameParams {
             text_document_position: TextDocumentPositionParams {
@@ -1042,7 +1072,9 @@ impl PluginCatalogRpcHandler {
         + Send
         + 'static,
     ) {
-        let uri = Url::from_file_path(path).unwrap();
+        let Some(uri) = file_url(path) else {
+            return;
+        };
         let method = SemanticTokensFullRequest::METHOD;
         let params = SemanticTokensParams {
             text_document: TextDocumentIdentifier { uri },
@@ -1069,7 +1101,9 @@ impl PluginCatalogRpcHandler {
         + Send
         + 'static,
     ) {
-        let uri = Url::from_file_path(path).unwrap();
+        let Some(uri) = file_url(path) else {
+            return;
+        };
         let method = SelectionRangeRequest::METHOD;
         let params = SelectionRangeParams {
             text_document: TextDocumentIdentifier { uri },
@@ -1094,7 +1128,9 @@ impl PluginCatalogRpcHandler {
         position: Position,
         cb: impl FnOnce(PluginId, Result<Hover, RpcError>) + Clone + Send + 'static,
     ) {
-        let uri = Url::from_file_path(path).unwrap();
+        let Some(uri) = file_url(path) else {
+            return;
+        };
         let method = HoverRequest::METHOD;
         let params = HoverParams {
             text_document_position_params: TextDocumentPositionParams {
@@ -1122,7 +1158,9 @@ impl PluginCatalogRpcHandler {
         input: String,
         position: Position,
     ) {
-        let uri = Url::from_file_path(path).unwrap();
+        let Some(uri) = file_url(path) else {
+            return;
+        };
         let method = Completion::METHOD;
         let params = CompletionParams {
             text_document_position: TextDocumentPositionParams {
@@ -1202,7 +1240,9 @@ impl PluginCatalogRpcHandler {
         path: &Path,
         position: Position,
     ) {
-        let uri = Url::from_file_path(path).unwrap();
+        let Some(uri) = file_url(path) else {
+            return;
+        };
         let method = SignatureHelpRequest::METHOD;
         let params = SignatureHelpParams {
             // TODO: We could provide more information about the signature for the LSP to work with
@@ -1546,6 +1586,19 @@ pub enum PluginNotification {
     },
 }
 
+/// The `file://` URL of `path`, or `None` when `path` is not absolute. The
+/// failure is logged; callers drop the request, as when no plugin handles it.
+fn file_url(path: &Path) -> Option<Url> {
+    let url = Url::from_file_path(path).ok();
+    if url.is_none() {
+        tracing::error!(
+            "can't build a file URL for {}: the path is not absolute",
+            path.display()
+        );
+    }
+    url
+}
+
 pub fn volt_icon(volt: &VoltMetadata) -> Option<Vec<u8>> {
     let dir = volt.dir.as_ref()?;
     let icon = dir.join(volt.icon.as_ref()?);
@@ -1587,7 +1640,8 @@ pub fn download_volt(volt: &VoltInfo) -> Result<VoltMetadata> {
     fs::create_dir_all(&plugin_dir)?;
 
     if is_zstd {
-        let tar = zstd::Decoder::new(&mut resp).unwrap();
+        let tar = zstd::Decoder::new(&mut resp)
+            .context("can't create the zstd decoder for the plugin archive")?;
         let mut archive = Archive::new(tar);
         archive.unpack(&plugin_dir)?;
     } else {
@@ -1793,5 +1847,24 @@ fn client_capabilities() -> ClientCapabilities {
         }),
         experimental: Some(experimental.into()),
         ..Default::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::file_url;
+
+    #[test]
+    fn file_url_rejects_relative_paths_instead_of_panicking() {
+        assert!(file_url(Path::new("src/main.rs")).is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn file_url_converts_absolute_paths() {
+        let url = file_url(Path::new("/ws/src/main.rs")).unwrap();
+        assert_eq!(url.as_str(), "file:///ws/src/main.rs");
     }
 }
