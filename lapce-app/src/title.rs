@@ -304,6 +304,9 @@ fn middle(
     .debug_name("Middle of Top Bar")
 }
 
+/// Temporarily hides the "Restart to update" menu entry and the update badge.
+const SHOW_UPDATE_UI: bool = false;
+
 fn right(
     window_command: Listener<WindowCommand>,
     workbench_command: Listener<LapceWorkbenchCommand>,
@@ -314,6 +317,9 @@ fn right(
     config: ReadSignal<Arc<LapceConfig>>,
 ) -> impl View {
     let latest_version = create_memo(move |_| {
+        if !SHOW_UPDATE_UI {
+            return None;
+        }
         let latest_release = latest_release.get();
         let latest_version =
             latest_release.as_ref().as_ref().map(|r| r.version.clone());
@@ -340,7 +346,7 @@ fn right(
                 config,
             )
             .popout_menu(move || {
-                Menu::new("")
+                let menu = Menu::new("")
                     .entry(MenuItem::new("Command Palette").action(move || {
                         workbench_command.send(LapceWorkbenchCommand::PaletteCommand)
                     }))
@@ -360,8 +366,9 @@ fn right(
                                 .send(LapceWorkbenchCommand::OpenThemeColorSettings)
                         },
                     ))
-                    .separator()
-                    .entry(if let Some(v) = latest_version.get_untracked() {
+                    .separator();
+                let menu = if SHOW_UPDATE_UI {
+                    menu.entry(if let Some(v) = latest_version.get_untracked() {
                         if update_in_progress.get_untracked() {
                             MenuItem::new(format!("Update in progress ({v})"))
                                 .enabled(false)
@@ -376,10 +383,15 @@ fn right(
                     } else {
                         MenuItem::new("No update available").enabled(false)
                     })
-                    .separator()
+                        .separator()
+                } else {
+                    menu
+                };
+                menu                    .separator()
                     .entry(MenuItem::new("About Lapce").action(move || {
                         workbench_command.send(LapceWorkbenchCommand::ShowAbout)
                     }))
+
             }),
             container(label(|| "1".to_string()).style(move |s| {
                 let config = config.get();
