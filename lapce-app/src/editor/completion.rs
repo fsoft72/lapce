@@ -378,10 +378,7 @@ impl EditorData {
         })
     }
 
-    fn apply_completion_item(
-        &self,
-        item: &CompletionItem,
-    ) -> anyhow::Result<()> {
+    fn apply_completion_item(&self, item: &CompletionItem) -> anyhow::Result<()> {
         let doc = self.doc();
         let buffer = doc.buffer.get_untracked();
         let cursor = self.cursor().get_untracked();

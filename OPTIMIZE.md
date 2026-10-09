@@ -4,7 +4,7 @@
 
 ## Critical
 
-- [ ] **Split the god files** — the app/UI layer has several 3000-4300 line files that mix view building, state and command handling, which makes every change risky and slows incremental builds. Split by responsibility (e.g. `app.rs` into window/menu/layout/launch modules, `editor.rs` into data/commands/gutter-like parts, `main_split.rs` into split tree and editor-tab operations).
+- [x] **Split the god files** — the app/UI layer has several 3000-4300 line files that mix view building, state and command handling, which makes every change risky and slows incremental builds. Split by responsibility (e.g. `app.rs` into window/menu/layout/launch modules, `editor.rs` into data/commands/gutter-like parts, `main_split.rs` into split tree and editor-tab operations).
   - File(s): `lapce-app/src/app.rs` (4344), `lapce-app/src/editor.rs` (3926), `lapce-app/src/main_split.rs` (3105), `lapce-app/src/window_tab.rs` (3064), `lapce-app/src/editor/view.rs` (2731), `lapce-app/src/doc.rs` (2240)
 
 ## High

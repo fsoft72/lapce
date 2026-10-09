@@ -448,11 +448,7 @@ enum FindHintRs {
     Match(Location),
 }
 
-fn find_hint(
-    mut pre_hint_len: u32,
-    index: u32,
-    hint: &InlayHint,
-) -> FindHintRs {
+fn find_hint(mut pre_hint_len: u32, index: u32, hint: &InlayHint) -> FindHintRs {
     use FindHintRs::*;
     match &hint.label {
         InlayHintLabel::String(text) => {
