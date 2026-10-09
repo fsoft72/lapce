@@ -29,7 +29,7 @@
 - [x] **Fixed `thread::sleep` for synchronization** — sleeps of 20 ms, 500 ms and similar are used for polling or retry in the proxy; they add latency and hide races. Replace with channel receives with timeout, condition variables or event-driven wakeups.
   - File(s): `lapce-proxy/src/agent/process.rs` (line ~130), `lapce-proxy/src/agent/session.rs` (line ~189), `lapce-proxy/src/plugin/mod.rs` (line ~1646), `lapce-app/src/config/watcher.rs` (line ~28)
 
-- [ ] **Rerun and send duplicate prompt bookkeeping** — `send_input`, `rerun` and `send_text` in the agent data share the busy check but each repeats it; a single `try_send(text)` entry point would keep the "ignore while busy" rule in one place. Also decide whether Rerun should reuse the original file context instead of recomputing the active one.
+- [x] **Rerun and send duplicate prompt bookkeeping** — `send_input`, `rerun` and `send_text` in the agent data share the busy check but each repeats it; a single `try_send(text)` entry point would keep the "ignore while busy" rule in one place. Also decide whether Rerun should reuse the original file context instead of recomputing the active one.
   - File(s): `lapce-app/src/agent.rs`
 
 - [ ] **Agent buttons are not keyboard reachable** — `button()` is a plain label with an `on_click`, so Copy/Edit/Rerun/Restart/Cancel have no focus or key activation. Add a focusable button view shared by the panel.

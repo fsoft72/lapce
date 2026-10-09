@@ -49,7 +49,11 @@ const TOAST_DURATION: Duration = Duration::from_millis(1500);
 /// One entry in the chat transcript.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AgentItem {
-    User(String),
+    /// A prompt of the user, with the context that was attached to it.
+    User {
+        text: String,
+        contexts: Vec<AgentContext>,
+    },
     Assistant(String),
     Thought(String),
     Tool {
@@ -164,10 +168,24 @@ impl AgentState {
         }
     }
 
-    /// Records the user's message and marks the agent as working.
-    pub fn push_user(&mut self, text: &str) {
-        self.push_item(AgentItem::User(text.to_string()));
+    /// Records the user's message and the context sent with it, and marks
+    /// the agent as working.
+    pub fn push_user(&mut self, text: &str, contexts: Vec<AgentContext>) {
+        self.push_item(AgentItem::User {
+            text: text.to_string(),
+            contexts,
+        });
         self.busy = true;
+    }
+
+    /// The text and the context of the user prompt at `index`, if it is one.
+    pub fn user_prompt(&self, index: usize) -> Option<(String, Vec<AgentContext>)> {
+        match self.items.get(index)? {
+            AgentItem::User { text, contexts } => {
+                Some((text.clone(), contexts.clone()))
+            }
+            _ => None,
+        }
     }
 
     /// Removes and returns the permission request currently shown, if any.
@@ -572,19 +590,23 @@ impl AgentData {
         self.state.update(|state| state.push_error(message));
     }
 
-    /// Reads and clears the input box. Returns `None` when it only has whitespace.
-    fn take_input_text(&self) -> Option<String> {
-        let doc = self.input.doc();
-        let text = doc.buffer.with_untracked(|buffer| buffer.to_string());
-        let text = text.trim().to_string();
-        if text.is_empty() {
-            return None;
-        }
+    /// The trimmed text of the input box, or `None` when it only has whitespace.
+    fn input_text(&self) -> Option<String> {
+        let text = self
+            .input
+            .doc()
+            .buffer
+            .with_untracked(|buffer| buffer.to_string());
+        let text = text.trim();
+        (!text.is_empty()).then(|| text.to_string())
+    }
+
+    /// Clears the input box and closes the mention list.
+    fn clear_input(&self) {
         // `reset` also moves the cursor to 0: clearing the buffer alone would
         // leave it past the end, and the next keystroke would panic in xi-rope.
         self.input.reset();
         self.mention.set(None);
-        Some(text)
     }
 
     /// Builds the context attached to a prompt: the active file, and its selection if any.
@@ -622,23 +644,26 @@ impl AgentData {
         }
     }
 
-    /// Sends the input box content as a prompt, starting the agent first if needed.
+    /// Sends the input box content as a prompt, starting the agent first if
+    /// needed. The input box is cleared only when the prompt was sent.
     pub fn send_input(&self) {
-        if self.state.with_untracked(|state| state.busy) {
-            return;
-        }
-        let Some(text) = self.take_input_text() else {
+        let Some(text) = self.input_text() else {
             return;
         };
-        self.send_text(text);
+        if self.try_send(text, None) {
+            self.clear_input();
+        }
     }
 
-    /// Sends `text` again as a new prompt, leaving the input box untouched.
-    pub fn rerun(&self, text: String) {
-        if self.state.with_untracked(|state| state.busy) {
+    /// Sends the user prompt at `index` again, with the context that was
+    /// attached to it the first time, leaving the input box untouched.
+    pub fn rerun(&self, index: usize) {
+        let Some((text, contexts)) =
+            self.state.with_untracked(|state| state.user_prompt(index))
+        else {
             return;
-        }
-        self.send_text(text);
+        };
+        self.try_send(text, Some(contexts));
     }
 
     /// Replaces the content of the input box with `text` and puts the caret at its end.
@@ -652,19 +677,30 @@ impl AgentData {
         self.mention.set(None);
     }
 
-    /// Pushes `text` to the transcript and sends it to the agent, starting the agent first if needed.
-    fn send_text(&self, text: String) {
-        let connected = self.state.with_untracked(|state| {
-            matches!(state.status, AgentStatus::Ready | AgentStatus::Starting)
+    /// The single entry point for prompts: sends `text` with `contexts`, or
+    /// with the active file and the mentioned files when `contexts` is
+    /// `None`, starting the agent first if needed. Does nothing while a turn
+    /// is running. Returns whether the prompt was sent.
+    fn try_send(&self, text: String, contexts: Option<Vec<AgentContext>>) -> bool {
+        if self.memos.busy.get_untracked() {
+            return false;
+        }
+        let connected = self.memos.status.with_untracked(|status| {
+            matches!(status, AgentStatus::Ready | AgentStatus::Starting)
         });
         if !connected {
             self.restart();
         }
-        self.state.update(|state| state.push_user(&text));
-        let mut contexts = self.active_context();
-        let mentioned = self.mention_contexts(&text, &contexts);
-        contexts.extend(mentioned);
+        let contexts = contexts.unwrap_or_else(|| {
+            let mut contexts = self.active_context();
+            let mentioned = self.mention_contexts(&text, &contexts);
+            contexts.extend(mentioned);
+            contexts
+        });
+        self.state
+            .update(|state| state.push_user(&text, contexts.clone()));
         self.common.proxy.agent_prompt(text, contexts);
+        true
     }
 
     /// Stops the agent before its window or the app closes, blocking up to
@@ -838,7 +874,7 @@ mod tests {
     #[test]
     fn push_user_marks_the_state_busy_and_turn_end_clears_it() {
         let mut state = AgentState::default();
-        state.push_user("hi");
+        state.push_user("hi", Vec::new());
         assert!(state.busy);
         state.apply(&AgentEvent::TurnEnded {
             stop_reason: "EndTurn".into(),
@@ -849,7 +885,7 @@ mod tests {
     #[test]
     fn disconnect_resets_busy_clears_permission_and_reports_the_reason() {
         let mut state = AgentState::default();
-        state.push_user("hi");
+        state.push_user("hi", Vec::new());
         state.apply(&AgentEvent::PermissionRequest {
             request_id: 1,
             title: "Edit".into(),
@@ -872,7 +908,7 @@ mod tests {
     #[test]
     fn error_event_adds_an_error_item_and_stops_busy() {
         let mut state = AgentState::default();
-        state.push_user("hi");
+        state.push_user("hi", Vec::new());
         state.apply(&AgentEvent::Error {
             message: "boom".into(),
         });
@@ -907,7 +943,7 @@ mod tests {
     #[test]
     fn reset_turn_clears_busy_and_every_pending_permission() {
         let mut state = AgentState::default();
-        state.push_user("hi");
+        state.push_user("hi", Vec::new());
         request_permission(&mut state, 1);
         request_permission(&mut state, 2);
         state.reset_turn();
@@ -920,7 +956,7 @@ mod tests {
         // Restart during a turn: the replaced session never sends TurnEnded,
         // so only the reset done by restart can clear `busy`.
         let mut state = AgentState::default();
-        state.push_user("hi");
+        state.push_user("hi", Vec::new());
         request_permission(&mut state, 1);
         state.reset_turn();
         state.apply(&AgentEvent::Status {
@@ -931,7 +967,7 @@ mod tests {
         });
         assert!(!state.busy);
         assert!(state.current_permission().is_none());
-        state.push_user("again");
+        state.push_user("again", Vec::new());
         assert!(state.busy);
     }
 
@@ -942,7 +978,7 @@ mod tests {
         state.apply(&AgentEvent::Status {
             status: AgentStatus::Starting,
         });
-        state.push_user("hi");
+        state.push_user("hi", Vec::new());
         state.apply(&AgentEvent::TurnEnded {
             stop_reason: "Cancelled".into(),
         });
@@ -964,7 +1000,7 @@ mod tests {
     #[test]
     fn turn_end_clears_the_permission_queue() {
         let mut state = AgentState::default();
-        state.push_user("hi");
+        state.push_user("hi", Vec::new());
         request_permission(&mut state, 1);
         request_permission(&mut state, 2);
         state.apply(&AgentEvent::TurnEnded {
@@ -1013,7 +1049,7 @@ mod tests {
     #[test]
     fn a_streamed_chunk_bumps_only_the_revision_of_the_growing_reply() {
         let mut state = AgentState::default();
-        state.push_user("hi");
+        state.push_user("hi", Vec::new());
         state.apply(&AgentEvent::MessageChunk { text: "a".into() });
         assert_eq!((state.revision(0), state.revision(1)), (Some(0), Some(0)));
         state.apply(&AgentEvent::MessageChunk { text: "b".into() });
@@ -1058,12 +1094,29 @@ mod tests {
     }
 
     #[test]
+    fn user_prompt_returns_the_text_and_context_sent_with_it() {
+        let mut state = AgentState::default();
+        let contexts = vec![AgentContext {
+            path: "/ws/src/main.rs".into(),
+            selection: Some("fn main()".to_string()),
+        }];
+        state.push_user("explain", contexts.clone());
+        state.apply(&AgentEvent::MessageChunk { text: "ok".into() });
+        assert_eq!(
+            state.user_prompt(0),
+            Some(("explain".to_string(), contexts))
+        );
+        assert_eq!(state.user_prompt(1), None, "a reply is not a prompt");
+        assert_eq!(state.user_prompt(2), None);
+    }
+
+    #[test]
     fn busy_memo_follows_the_turn() {
         let cx = Scope::new();
         let state = cx.create_rw_signal(AgentState::default());
         let memos = AgentStateMemos::new(cx, state);
         assert!(!memos.busy.get_untracked());
-        state.update(|s| s.push_user("hi"));
+        state.update(|s| s.push_user("hi", Vec::new()));
         assert!(memos.busy.get_untracked());
         state.update(|s| s.reset_turn());
         assert!(!memos.busy.get_untracked());
@@ -1100,7 +1153,7 @@ mod tests {
     #[test]
     fn an_unsaved_edit_note_names_the_file_and_keeps_the_turn_running() {
         let mut state = AgentState::default();
-        state.push_user("hi");
+        state.push_user("hi", Vec::new());
         state.note_unsaved_edit(Path::new("/ws/src/main.rs"));
         state.push_error("boom".to_string());
         assert!(state.busy, "notes and edit errors do not end the turn");

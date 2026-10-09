@@ -73,3 +73,5 @@
   - The workspace file watcher of the proxy (`dispatch.rs`) uses it instead of a sleeping thread per burst; it no longer panics when there is no workspace.
   - The agent session `delay` (`agent/session.rs`) waits on a cancel channel instead of sleeping, so its helper thread ends as soon as the delay is dropped.
   - Kept on purpose: the 500 ms retry when Windows has not released a removed plugin folder yet (`plugin/mod.rs`) and the `try_wait` polling in the `agent/process.rs` tests, which have no event to wait on.
+- Agent prompts go through a single `AgentData::try_send` entry point, which owns the "ignore while a turn is running" rule. `send_input` reads the input box, and clears it only when `try_send` accepted the prompt.
+- Rerun now sends the prompt again with the context that was attached to it the first time (`AgentItem::User` stores its `contexts`), instead of the file that happens to be active when Rerun is clicked.

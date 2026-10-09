@@ -155,7 +155,7 @@ fn markdown_block_view(
 /// The label and the text shown for a transcript entry.
 fn item_display(item: &AgentItem) -> (&'static str, String) {
     match item {
-        AgentItem::User(text) => ("You", text.clone()),
+        AgentItem::User { text, .. } => ("You", text.clone()),
         AgentItem::Assistant(text) => ("Agent", text.clone()),
         AgentItem::Thought(text) => ("Thinking", text.clone()),
         AgentItem::Tool { title, status, .. } => {
@@ -187,7 +187,7 @@ fn item_view(window_tab_data: Rc<WindowTabData>, index: usize) -> impl View {
     let (prefix, is_user, is_assistant) = item.with_untracked(|item| match item {
         Some(item) => (
             item_display(item).0,
-            matches!(item, AgentItem::User(_)),
+            matches!(item, AgentItem::User { .. }),
             matches!(item, AgentItem::Assistant(_)),
         ),
         None => ("", false, false),
@@ -223,7 +223,7 @@ fn item_view(window_tab_data: Rc<WindowTabData>, index: usize) -> impl View {
                     edit_agent.edit_in_input(&text_untracked());
                 }),
                 button(window_tab_data.clone(), "Rerun", move || {
-                    rerun_agent.rerun(text_untracked());
+                    rerun_agent.rerun(index);
                 }),
             ))
             .style(|s| s.margin_top(4.0)),
