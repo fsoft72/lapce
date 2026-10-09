@@ -52,7 +52,7 @@
 - [x] **Mention file list loaded eagerly and unbounded** — `load_files` fetches every workspace file path and sorts them in memory on load; for large repos use a cap or incremental fuzzy search in the proxy.
   - File(s): `lapce-app/src/agent.rs`, `lapce-app/src/agent_mention.rs`
 
-- [ ] **Toast has no cancellation** — `show_toast` schedules a clear after a fixed delay; two quick copies let the first timer hide the second toast early. Track a generation counter and clear only if it still matches.
+- [x] **Toast has no cancellation** — `show_toast` schedules a clear after a fixed delay; two quick copies let the first timer hide the second toast early. Track a generation counter and clear only if it still matches.
   - File(s): `lapce-app/src/agent.rs`
 
 - [ ] **Magic numbers in the agent panel layout** — values like `margin_top(4.0)`, `padding_vert(6.0)`, `inset_bottom(INPUT_HEIGHT + 30.0)` are inline; extract named constants like the existing `INPUT_*` ones.
