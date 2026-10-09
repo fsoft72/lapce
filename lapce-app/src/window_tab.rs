@@ -269,7 +269,6 @@ impl KeyPressFocus for WindowTabData {
 }
 
 impl WindowTabData {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         cx: Scope,
         workspace: Arc<LapceWorkspace>,

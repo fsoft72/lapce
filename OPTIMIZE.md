@@ -35,7 +35,7 @@
 - [x] **Agent buttons are not keyboard reachable** — `button()` is a plain label with an `on_click`, so Copy/Edit/Rerun/Restart/Cancel have no focus or key activation. Add a focusable button view shared by the panel.
   - File(s): `lapce-app/src/panel/agent_view.rs`
 
-- [ ] **`too_many_arguments` suppressed in several constructors** — the `#[allow(clippy::too_many_arguments)]` markers (window_tab, catalog, find, settings, terminal view) point at missing parameter structs; introduce context/builder structs instead of silencing the lint.
+- [x] **`too_many_arguments` suppressed in several constructors** — the `#[allow(clippy::too_many_arguments)]` markers (window_tab, catalog, find, settings, terminal view) point at missing parameter structs; introduce context/builder structs instead of silencing the lint.
   - File(s): `lapce-app/src/window_tab.rs`, `lapce-proxy/src/plugin/catalog.rs`, `lapce-app/src/find.rs`, `lapce-app/src/settings.rs`, `lapce-app/src/terminal/view.rs`
 
 - [ ] **Heavy `.clone()` use** — about 1500 `.clone()` calls across the crates, many on `String`, `PathBuf` and `Vec` in UI closures. Review hot closures (per-frame style and view closures) and prefer `Rc`/`Arc` or borrowed data there.

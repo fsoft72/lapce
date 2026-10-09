@@ -54,6 +54,17 @@ pub struct FindStatus {
     lines: Vec<usize>,
 }
 
+/// How [`Find::find`] matches the search string.
+#[derive(Clone, Copy)]
+pub struct FindOptions {
+    pub case_matching: CaseMatching,
+    /// Only match whole words.
+    pub whole_words: bool,
+    /// Also look a little before `start` and after `end`, so matches that
+    /// cross the edges of the range are found.
+    pub include_slop: bool,
+}
+
 #[derive(Clone)]
 pub struct FindSearchString {
     pub content: String,
@@ -344,17 +355,21 @@ impl Find {
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
+    /// Adds to `occurrences` the matches of `search` in `text` between
+    /// `start` and `end`, following `options`.
     pub fn find(
         text: &Rope,
         search: &FindSearchString,
         start: usize,
         end: usize,
-        case_matching: CaseMatching,
-        whole_words: bool,
-        include_slop: bool,
+        options: FindOptions,
         occurrences: &mut Selection,
     ) {
+        let FindOptions {
+            case_matching,
+            whole_words,
+            include_slop,
+        } = options;
         let search_string = &search.content;
 
         let slop = if include_slop {

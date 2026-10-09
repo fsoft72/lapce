@@ -87,18 +87,28 @@ use crate::buffer::language_id_from_path;
 
 pub type PluginName = String;
 
+/// A request to plugin servers, routed by the plugin catalog.
+pub struct ServerRequest {
+    /// The plugin to ask, or `None` to ask every plugin.
+    pub plugin_id: Option<PluginId>,
+    /// Counts the requests sent out when every plugin is asked.
+    pub request_sent: Option<Arc<AtomicUsize>>,
+    pub method: Cow<'static, str>,
+    pub params: Value,
+    /// The language of the document the request is about.
+    pub language_id: Option<String>,
+    /// The document the request is about.
+    pub path: Option<PathBuf>,
+    /// Whether each plugin first checks its capabilities and document
+    /// selector, instead of sending the request straight away.
+    pub check: bool,
+    /// Called with the answer of each plugin asked.
+    pub f: Box<dyn CloneableCallback<Value, RpcError>>,
+}
+
 #[allow(clippy::large_enum_variant)]
 pub enum PluginCatalogRpc {
-    ServerRequest {
-        plugin_id: Option<PluginId>,
-        request_sent: Option<Arc<AtomicUsize>>,
-        method: Cow<'static, str>,
-        params: Value,
-        language_id: Option<String>,
-        path: Option<PathBuf>,
-        check: bool,
-        f: Box<dyn CloneableCallback<Value, RpcError>>,
-    },
+    ServerRequest(ServerRequest),
     ServerNotification {
         plugin_id: Option<PluginId>,
         method: Cow<'static, str>,
@@ -253,26 +263,8 @@ impl PluginCatalogRpcHandler {
         let plugin_rx = self.plugin_rx.lock().take().unwrap();
         for msg in plugin_rx {
             match msg {
-                PluginCatalogRpc::ServerRequest {
-                    plugin_id,
-                    request_sent,
-                    method,
-                    params,
-                    language_id,
-                    path,
-                    check,
-                    f,
-                } => {
-                    plugin.handle_server_request(
-                        plugin_id,
-                        request_sent,
-                        method,
-                        params,
-                        language_id,
-                        path,
-                        check,
-                        f,
-                    );
+                PluginCatalogRpc::ServerRequest(request) => {
+                    plugin.handle_server_request(request);
                 }
                 PluginCatalogRpc::ServerNotification {
                     plugin_id,
@@ -443,7 +435,7 @@ impl PluginCatalogRpcHandler {
         f: impl FnOnce(PluginId, Result<Value, RpcError>) + Send + DynClone + 'static,
     ) {
         let params = serde_json::to_value(params).unwrap();
-        let rpc = PluginCatalogRpc::ServerRequest {
+        let rpc = PluginCatalogRpc::ServerRequest(ServerRequest {
             plugin_id,
             request_sent,
             method: method.into(),
@@ -452,7 +444,7 @@ impl PluginCatalogRpcHandler {
             path,
             check,
             f: Box::new(f),
-        };
+        });
         if let Err(err) = self.plugin_tx.send(rpc) {
             tracing::error!("{:?}", err);
         }

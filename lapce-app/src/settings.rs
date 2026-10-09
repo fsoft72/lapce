@@ -1278,13 +1278,15 @@ fn dropdown_view(
                 let id = add_overlay(Point::ZERO, move |_| {
                     dropdown_scroll(
                         &item.clone(),
-                        current_value,
                         &dropdown.clone(),
-                        expanded,
-                        dropdown_scroll_focus,
-                        dropdown_input_focus,
-                        window_origin,
-                        size,
+                        DropdownSignals {
+                            current_value,
+                            expanded,
+                            scroll_focus: dropdown_scroll_focus,
+                            input_focus: dropdown_input_focus,
+                            window_origin,
+                            input_size: size,
+                        },
                         window_size,
                         config,
                     )
@@ -1361,19 +1363,40 @@ fn dropdown_view(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
+/// The signals shared by a dropdown input and its floating list.
+#[derive(Clone, Copy)]
+struct DropdownSignals {
+    /// The value shown in the input.
+    current_value: RwSignal<String>,
+    /// Whether the list is open.
+    expanded: RwSignal<bool>,
+    /// Whether the list has the focus.
+    scroll_focus: RwSignal<bool>,
+    /// Whether the input has the focus.
+    input_focus: RwSignal<bool>,
+    /// Position of the input in the window.
+    window_origin: RwSignal<Point>,
+    /// Size of the input.
+    input_size: RwSignal<Size>,
+}
+
+/// The floating list of a dropdown, placed below the input when it fits in
+/// the window and above it otherwise.
 fn dropdown_scroll(
     item: &SettingsItem,
-    current_value: RwSignal<String>,
     dropdown: &DropdownInfo,
-    expanded: RwSignal<bool>,
-    dropdown_scroll_focus: RwSignal<bool>,
-    dropdown_input_focus: RwSignal<bool>,
-    window_origin: RwSignal<Point>,
-    input_size: RwSignal<Size>,
+    signals: DropdownSignals,
     window_size: RwSignal<Size>,
     config: ReadSignal<Arc<LapceConfig>>,
 ) -> impl View + use<> {
+    let DropdownSignals {
+        current_value,
+        expanded,
+        scroll_focus: dropdown_scroll_focus,
+        input_focus: dropdown_input_focus,
+        window_origin,
+        input_size,
+    } = signals;
     dropdown_scroll_focus.set(true);
 
     let kind = item.kind.clone();

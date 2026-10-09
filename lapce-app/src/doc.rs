@@ -67,7 +67,7 @@ use smallvec::SmallVec;
 use crate::{
     config::LapceConfig,
     editor::{EditorData, gutter::FoldingRanges},
-    find::{Find, FindProgress, FindResult},
+    find::{Find, FindOptions, FindProgress, FindResult},
     history::DocumentHistory,
     main_split::Editors,
     panel::{document_symbol::SymbolData, kind::PanelKind},
@@ -999,9 +999,11 @@ impl Doc {
                 &search,
                 0,
                 text.len(),
-                case_matching,
-                whole_words,
-                true,
+                FindOptions {
+                    case_matching,
+                    whole_words,
+                    include_slop: true,
+                },
                 &mut occurrences,
             );
             send(occurrences);

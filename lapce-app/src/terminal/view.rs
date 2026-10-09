@@ -35,6 +35,7 @@ use parking_lot::RwLock;
 use unicode_width::UnicodeWidthChar;
 
 use super::{
+    data::TerminalData,
     panel::TerminalPanelData,
     raw::{RawTerminal, visible_regex_match_iter},
 };
@@ -95,18 +96,19 @@ pub struct TerminalView {
     current_mouse_action: MouseAction,
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Builds the view of `terminal`, a terminal of the panel `terminal_panel_data`.
 pub fn terminal_view(
-    term_id: TermId,
-    raw: ReadSignal<Arc<RwLock<RawTerminal>>>,
-    mode: ReadSignal<Mode>,
-    run_config: ReadSignal<Option<RunDebugProcess>>,
+    terminal: &TerminalData,
     terminal_panel_data: TerminalPanelData,
-    launch_error: RwSignal<Option<String>>,
     internal_command: Listener<InternalCommand>,
     workspace: Arc<LapceWorkspace>,
     hovering_link: RwSignal<bool>,
 ) -> TerminalView {
+    let term_id = terminal.term_id;
+    let raw = terminal.raw.read_only();
+    let mode = terminal.mode.read_only();
+    let run_config = terminal.run_debug.read_only();
+    let launch_error = terminal.launch_error;
     let id = ViewId::new();
 
     create_effect(move |_| {
@@ -147,8 +149,7 @@ pub fn terminal_view(
     });
 
     // path:line:col references, e.g. produced by compiler/linter diagnostics
-    let file_link =
-        RegexSearch::new("[\\w./\\\\-]+\\.\\w+:\\d+(:\\d+)?").unwrap();
+    let file_link = RegexSearch::new("[\\w./\\\\-]+\\.\\w+:\\d+(:\\d+)?").unwrap();
     let url_link =
         RegexSearch::new("https?://[^\\s\"'<>\\(\\)\\[\\]\\{\\}]+").unwrap();
 

@@ -293,12 +293,8 @@ fn terminal_tab_split(
             let hovering_link = terminal_scope.create_rw_signal(false);
             container({
                 let terminal_view = terminal_view(
-                    terminal.term_id,
-                    terminal.raw.read_only(),
-                    terminal.mode.read_only(),
-                    terminal.run_debug.read_only(),
+                    &terminal,
                     terminal_panel_data,
-                    terminal.launch_error,
                     internal_command,
                     workspace.clone(),
                     hovering_link,
