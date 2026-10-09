@@ -210,16 +210,9 @@ fn permission_bar(
     agent: AgentData,
 ) -> impl View {
     let config = window_tab_data.common.config;
-    let pending = {
-        let agent = agent.clone();
-        move || {
-            agent
-                .state
-                .with(|state| state.current_permission().cloned())
-        }
-    };
+    let pending = agent.memos.permission;
     dyn_stack(
-        move || pending().into_iter().collect::<Vec<_>>(),
+        move || pending.get().into_iter().collect::<Vec<_>>(),
         |pending| pending.request_id,
         move |pending| {
             let agent = agent.clone();
@@ -485,8 +478,8 @@ fn agent_body(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View
             move || agent.cancel()
         }),
         label({
-            let agent = agent.clone();
-            move || agent.state.with(|state| state.status.to_string())
+            let status = agent.memos.status;
+            move || status.with(|status| status.to_string())
         })
         .style(move |s| s.color(config.get().color(LapceColor::EDITOR_DIM))),
     ))

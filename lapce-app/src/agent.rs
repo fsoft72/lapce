@@ -276,11 +276,39 @@ impl AgentState {
     }
 }
 
+/// Focused views of [`AgentState`]. Each memo only notifies its readers when
+/// its own value changes, so a streamed chunk does not re-run the toolbar or
+/// the permission bar, and a status change does not re-run the transcript.
+#[derive(Clone, Copy)]
+pub struct AgentStateMemos {
+    /// Connection status of the agent.
+    pub status: Memo<AgentStatus>,
+    /// Whether a turn is running.
+    pub busy: Memo<bool>,
+    /// The permission request currently shown, if any.
+    pub permission: Memo<Option<PendingPermission>>,
+}
+
+impl AgentStateMemos {
+    /// Creates the memos reading `state` in the scope `cx`.
+    pub fn new(cx: Scope, state: RwSignal<AgentState>) -> Self {
+        Self {
+            status: cx.create_memo(move |_| state.with(|s| s.status.clone())),
+            busy: cx.create_memo(move |_| state.with(|s| s.busy)),
+            permission: cx.create_memo(move |_| {
+                state.with(|s| s.current_permission().cloned())
+            }),
+        }
+    }
+}
+
 /// Reactive wrapper around [`AgentState`] plus the pieces needed to edit buffers.
 #[derive(Clone)]
 pub struct AgentData {
     /// Transcript, status and pending permission of the agent panel.
     pub state: RwSignal<AgentState>,
+    /// Focused views of `state` for the panel to read.
+    pub memos: AgentStateMemos,
     /// Open documents, used to apply agent edits to buffers.
     pub main_split: MainSplitData,
     /// Shared window tab data (proxy handle, config, focus).
@@ -318,8 +346,10 @@ impl AgentData {
             files
                 .with(|files| filter_files(files, &mention.query, MAX_MENTION_ITEMS))
         });
+        let state = cx.create_rw_signal(AgentState::default());
         Self {
-            state: cx.create_rw_signal(AgentState::default()),
+            state,
+            memos: AgentStateMemos::new(cx, state),
             main_split,
             common,
             input,
@@ -908,6 +938,64 @@ mod tests {
             stop_reason: "EndTurn".into(),
         });
         assert!(state.pending.is_empty());
+    }
+
+    /// Counts how many times an effect reading `read` runs.
+    fn count_runs(cx: Scope, read: impl Fn() + 'static) -> Rc<std::cell::Cell<u32>> {
+        let runs = Rc::new(std::cell::Cell::new(0));
+        let counter = runs.clone();
+        cx.create_effect(move |_| {
+            read();
+            counter.set(counter.get() + 1);
+        });
+        runs
+    }
+
+    #[test]
+    fn memos_only_notify_their_readers_when_their_value_changes() {
+        let cx = Scope::new();
+        let state = cx.create_rw_signal(AgentState::default());
+        let memos = AgentStateMemos::new(cx, state);
+        let status_runs = count_runs(cx, move || memos.status.with(|_| ()));
+        let permission_runs = count_runs(cx, move || memos.permission.with(|_| ()));
+        assert_eq!((status_runs.get(), permission_runs.get()), (1, 1));
+
+        state.update(|s| s.apply(&AgentEvent::MessageChunk { text: "a".into() }));
+        assert_eq!((status_runs.get(), permission_runs.get()), (1, 1));
+
+        state.update(|s| {
+            s.apply(&AgentEvent::Status {
+                status: AgentStatus::Ready,
+            })
+        });
+        assert_eq!((status_runs.get(), permission_runs.get()), (2, 1));
+        assert_eq!(memos.status.get_untracked(), AgentStatus::Ready);
+
+        request_permission_in(state, 3);
+        assert_eq!((status_runs.get(), permission_runs.get()), (2, 2));
+        assert_eq!(memos.permission.get_untracked().unwrap().request_id, 3);
+        cx.dispose();
+    }
+
+    #[test]
+    fn busy_memo_follows_the_turn() {
+        let cx = Scope::new();
+        let state = cx.create_rw_signal(AgentState::default());
+        let memos = AgentStateMemos::new(cx, state);
+        assert!(!memos.busy.get_untracked());
+        state.update(|s| s.push_user("hi"));
+        assert!(memos.busy.get_untracked());
+        state.update(|s| s.reset_turn());
+        assert!(!memos.busy.get_untracked());
+        cx.dispose();
+    }
+
+    /// Queues a permission request with the given id in a reactive state.
+    fn request_permission_in(
+        state: RwSignal<AgentState>,
+        request_id: AgentRequestId,
+    ) {
+        state.update(|s| request_permission(s, request_id));
     }
 
     #[test]

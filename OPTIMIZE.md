@@ -15,7 +15,7 @@
 - [ ] **Whole transcript cloned on every state change** — the transcript `dyn_stack` source does `state.items.iter().cloned().enumerate().collect()` each time the state signal fires (including every streamed chunk), cloning every message string. Keep per-item signals, or `Rc<str>`/`Arc<str>` text in `AgentItem`, so unchanged items are not copied.
   - File(s): `lapce-app/src/panel/agent_view.rs`, `lapce-app/src/agent.rs`
 
-- [ ] **Single wide `state` signal drives the whole agent panel** — toolbar status, permission bar and transcript all depend on one `AgentState` signal, so any change (e.g. status text) re-evaluates every consumer. Split into focused memos (`status`, `busy`, `current_permission`, `items`).
+- [x] **Single wide `state` signal drives the whole agent panel** — toolbar status, permission bar and transcript all depend on one `AgentState` signal, so any change (e.g. status text) re-evaluates every consumer. Split into focused memos (`status`, `busy`, `current_permission`, `items`).
   - File(s): `lapce-app/src/agent.rs`, `lapce-app/src/panel/agent_view.rs`
 
 - [ ] **`.lock().unwrap()` / `.read().unwrap()` on shared state** — a panic in one thread poisons the lock and cascades into panics in every other thread that touches it, including the proxy. Handle poisoning explicitly (`parking_lot`, or `unwrap_or_else(PoisonError::into_inner)`) and fail with context.
