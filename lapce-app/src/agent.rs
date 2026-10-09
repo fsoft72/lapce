@@ -2,7 +2,6 @@
 
 use std::{
     collections::VecDeque,
-    hash::{Hash, Hasher},
     path::{Path, PathBuf},
     rc::Rc,
     time::Duration,
@@ -63,25 +62,6 @@ pub enum AgentItem {
     Note(String),
 }
 
-impl AgentItem {
-    /// A key that changes whenever the visible content changes, so the list
-    /// view re-renders items that grow while streaming.
-    pub fn render_key(&self) -> u64 {
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        match self {
-            AgentItem::User(text) => (0u8, text).hash(&mut hasher),
-            AgentItem::Assistant(text) => (1u8, text).hash(&mut hasher),
-            AgentItem::Thought(text) => (2u8, text).hash(&mut hasher),
-            AgentItem::Tool { id, title, status } => {
-                (3u8, id, title, *status as u8).hash(&mut hasher)
-            }
-            AgentItem::Error(text) => (4u8, text).hash(&mut hasher),
-            AgentItem::Note(text) => (5u8, text).hash(&mut hasher),
-        }
-        hasher.finish()
-    }
-}
-
 /// What to do with an agent write to an open document.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgentEditPlan {
@@ -127,7 +107,12 @@ pub struct PendingPermission {
 /// Everything the panel displays. Plain data so it can be tested without a UI.
 #[derive(Debug, Clone)]
 pub struct AgentState {
-    pub items: im::Vector<AgentItem>,
+    /// The transcript, oldest first. Items are only ever appended or changed
+    /// in place, so an index identifies an item for the whole session.
+    items: im::Vector<AgentItem>,
+    /// Revision of each item, bumped whenever the item changes, so the panel
+    /// re-renders an item only when its own revision moves.
+    revisions: im::Vector<u64>,
     pub status: AgentStatus,
     pub busy: bool,
     /// Permission requests waiting for a decision, oldest first. Only the
@@ -140,6 +125,7 @@ impl Default for AgentState {
     fn default() -> Self {
         Self {
             items: im::Vector::new(),
+            revisions: im::Vector::new(),
             status: AgentStatus::Disconnected {
                 reason: "not started".to_string(),
             },
@@ -150,9 +136,37 @@ impl Default for AgentState {
 }
 
 impl AgentState {
+    /// The transcript, oldest first.
+    pub fn items(&self) -> &im::Vector<AgentItem> {
+        &self.items
+    }
+
+    /// The transcript entry at `index`, if any.
+    pub fn item(&self, index: usize) -> Option<&AgentItem> {
+        self.items.get(index)
+    }
+
+    /// The revision of the transcript entry at `index`, if any.
+    pub fn revision(&self, index: usize) -> Option<u64> {
+        self.revisions.get(index).copied()
+    }
+
+    /// Appends an item to the transcript.
+    fn push_item(&mut self, item: AgentItem) {
+        self.items.push_back(item);
+        self.revisions.push_back(0);
+    }
+
+    /// Records that the item at `index` changed.
+    fn touch(&mut self, index: usize) {
+        if let Some(revision) = self.revisions.get_mut(index) {
+            *revision += 1;
+        }
+    }
+
     /// Records the user's message and marks the agent as working.
     pub fn push_user(&mut self, text: &str) {
-        self.items.push_back(AgentItem::User(text.to_string()));
+        self.push_item(AgentItem::User(text.to_string()));
         self.busy = true;
     }
 
@@ -168,13 +182,13 @@ impl AgentState {
 
     /// Adds an error to the transcript without ending the turn.
     pub fn push_error(&mut self, message: String) {
-        self.items.push_back(AgentItem::Error(message));
+        self.push_item(AgentItem::Error(message));
     }
 
     /// Tells the user an agent edit to `path` was left unsaved because the
     /// document already had unsaved changes.
     pub fn note_unsaved_edit(&mut self, path: &Path) {
-        self.items.push_back(AgentItem::Note(format!(
+        self.push_item(AgentItem::Note(format!(
             "The agent edited {}, which has unsaved changes: its edit is not saved \
              either, so the agent's own tools still see the file on disk.",
             path.display()
@@ -204,6 +218,7 @@ impl AgentState {
             _ => false,
         };
         if merged {
+            self.touch(self.items.len() - 1);
             return;
         }
         let item = if thought {
@@ -211,7 +226,40 @@ impl AgentState {
         } else {
             AgentItem::Assistant(text.to_string())
         };
-        self.items.push_back(item);
+        self.push_item(item);
+    }
+
+    /// Changes the title and status of the tool calls with `id`.
+    fn update_tool(
+        &mut self,
+        id: &str,
+        title: Option<&String>,
+        status: Option<AgentToolStatus>,
+    ) {
+        let mut changed = Vec::new();
+        for (index, item) in self.items.iter_mut().enumerate() {
+            let AgentItem::Tool {
+                id: tool_id,
+                title: tool_title,
+                status: tool_status,
+            } = item
+            else {
+                continue;
+            };
+            if tool_id != id {
+                continue;
+            }
+            if let Some(title) = title {
+                *tool_title = title.clone();
+            }
+            if let Some(status) = status {
+                *tool_status = status;
+            }
+            changed.push(index);
+        }
+        for index in changed {
+            self.touch(index);
+        }
     }
 
     /// Applies one event from the proxy to the state.
@@ -220,32 +268,14 @@ impl AgentState {
             AgentEvent::MessageChunk { text } => self.append_text(text, false),
             AgentEvent::ThoughtChunk { text } => self.append_text(text, true),
             AgentEvent::ToolCall { id, title, status } => {
-                self.items.push_back(AgentItem::Tool {
+                self.push_item(AgentItem::Tool {
                     id: id.clone(),
                     title: title.clone(),
                     status: *status,
                 });
             }
             AgentEvent::ToolCallUpdate { id, title, status } => {
-                for item in self.items.iter_mut() {
-                    let AgentItem::Tool {
-                        id: tool_id,
-                        title: tool_title,
-                        status: tool_status,
-                    } = item
-                    else {
-                        continue;
-                    };
-                    if tool_id != id {
-                        continue;
-                    }
-                    if let Some(title) = title {
-                        *tool_title = title.clone();
-                    }
-                    if let Some(status) = status {
-                        *tool_status = *status;
-                    }
-                }
+                self.update_tool(id, title.as_ref(), *status);
             }
             AgentEvent::PermissionRequest {
                 request_id,
@@ -262,7 +292,7 @@ impl AgentState {
                 self.status = status.clone();
                 if let AgentStatus::Disconnected { reason } = status {
                     self.reset_turn();
-                    self.items.push_back(AgentItem::Error(format!(
+                    self.push_item(AgentItem::Error(format!(
                         "Agent disconnected: {reason}"
                     )));
                 }
@@ -270,7 +300,7 @@ impl AgentState {
             AgentEvent::TurnEnded { .. } => self.reset_turn(),
             AgentEvent::Error { message } => {
                 self.busy = false;
-                self.items.push_back(AgentItem::Error(message.clone()));
+                self.push_item(AgentItem::Error(message.clone()));
             }
         }
     }
@@ -287,6 +317,8 @@ pub struct AgentStateMemos {
     pub busy: Memo<bool>,
     /// The permission request currently shown, if any.
     pub permission: Memo<Option<PendingPermission>>,
+    /// Number of transcript entries, which only changes when one is added.
+    pub item_count: Memo<usize>,
 }
 
 impl AgentStateMemos {
@@ -298,6 +330,7 @@ impl AgentStateMemos {
             permission: cx.create_memo(move |_| {
                 state.with(|s| s.current_permission().cloned())
             }),
+            item_count: cx.create_memo(move |_| state.with(|s| s.items.len())),
         }
     }
 }
@@ -974,6 +1007,53 @@ mod tests {
         request_permission_in(state, 3);
         assert_eq!((status_runs.get(), permission_runs.get()), (2, 2));
         assert_eq!(memos.permission.get_untracked().unwrap().request_id, 3);
+        cx.dispose();
+    }
+
+    #[test]
+    fn a_streamed_chunk_bumps_only_the_revision_of_the_growing_reply() {
+        let mut state = AgentState::default();
+        state.push_user("hi");
+        state.apply(&AgentEvent::MessageChunk { text: "a".into() });
+        assert_eq!((state.revision(0), state.revision(1)), (Some(0), Some(0)));
+        state.apply(&AgentEvent::MessageChunk { text: "b".into() });
+        state.apply(&AgentEvent::MessageChunk { text: "c".into() });
+        assert_eq!((state.revision(0), state.revision(1)), (Some(0), Some(2)));
+        assert_eq!(
+            state.item(1),
+            Some(&AgentItem::Assistant("abc".to_string()))
+        );
+        assert_eq!(state.revision(2), None);
+    }
+
+    #[test]
+    fn a_tool_update_bumps_only_the_revision_of_that_tool() {
+        let mut state = AgentState::default();
+        for id in ["t1", "t2"] {
+            state.apply(&AgentEvent::ToolCall {
+                id: id.into(),
+                title: "Edit".into(),
+                status: AgentToolStatus::Pending,
+            });
+        }
+        state.apply(&AgentEvent::ToolCallUpdate {
+            id: "t2".into(),
+            title: None,
+            status: Some(AgentToolStatus::Completed),
+        });
+        assert_eq!((state.revision(0), state.revision(1)), (Some(0), Some(1)));
+    }
+
+    #[test]
+    fn item_count_memo_ignores_chunks_that_extend_the_last_item() {
+        let cx = Scope::new();
+        let state = cx.create_rw_signal(AgentState::default());
+        let memos = AgentStateMemos::new(cx, state);
+        let count_runs = count_runs(cx, move || memos.item_count.with(|_| ()));
+        state.update(|s| s.apply(&AgentEvent::MessageChunk { text: "a".into() }));
+        assert_eq!((memos.item_count.get_untracked(), count_runs.get()), (1, 2));
+        state.update(|s| s.apply(&AgentEvent::MessageChunk { text: "b".into() }));
+        assert_eq!((memos.item_count.get_untracked(), count_runs.get()), (1, 2));
         cx.dispose();
     }
 

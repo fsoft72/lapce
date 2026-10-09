@@ -97,11 +97,15 @@ fn button(
         })
 }
 
-/// Renders `text` as Markdown. Images are not shown.
-fn markdown_view(config: ReadSignal<Arc<LapceConfig>>, text: String) -> impl View {
+/// Renders the Markdown returned by `text`, again whenever it changes.
+/// Images are not shown.
+fn markdown_view(
+    config: ReadSignal<Arc<LapceConfig>>,
+    text: impl Fn() -> String + 'static,
+) -> impl View {
     let id = AtomicU64::new(0);
     dyn_stack(
-        move || parse_markdown(&text, MARKDOWN_LINE_HEIGHT, &config.get()),
+        move || parse_markdown(&text(), MARKDOWN_LINE_HEIGHT, &config.get()),
         move |_| id.fetch_add(1, Ordering::Relaxed),
         move |content| match content {
             MarkdownContent::Text(text_layout) => container(
@@ -120,12 +124,9 @@ fn markdown_view(config: ReadSignal<Arc<LapceConfig>>, text: String) -> impl Vie
     .style(|s| s.flex_col().width_full().min_width(0.0))
 }
 
-/// One transcript entry.
-fn item_view(window_tab_data: Rc<WindowTabData>, item: AgentItem) -> impl View {
-    let config = window_tab_data.common.config;
-    let is_user = matches!(item, AgentItem::User(_));
-    let is_assistant = matches!(item, AgentItem::Assistant(_));
-    let (prefix, text) = match &item {
+/// The label and the text shown for a transcript entry.
+fn item_display(item: &AgentItem) -> (&'static str, String) {
+    match item {
         AgentItem::User(text) => ("You", text.clone()),
         AgentItem::Assistant(text) => ("Agent", text.clone()),
         AgentItem::Thought(text) => ("Thinking", text.clone()),
@@ -140,15 +141,44 @@ fn item_view(window_tab_data: Rc<WindowTabData>, item: AgentItem) -> impl View {
         }
         AgentItem::Error(text) => ("Error", text.clone()),
         AgentItem::Note(text) => ("Note", text.clone()),
+    }
+}
+
+/// The transcript entry at `index`. It only follows the revision of its own
+/// entry, so a streamed chunk re-renders the growing reply and nothing else,
+/// and the other entries are never copied out of the state again.
+fn item_view(window_tab_data: Rc<WindowTabData>, index: usize) -> impl View {
+    let config = window_tab_data.common.config;
+    let state = window_tab_data.agent.state;
+    let revision = create_memo(move |_| state.with(|s| s.revision(index)));
+    let item = create_memo(move |_| {
+        revision.track();
+        state.with_untracked(|s| s.item(index).cloned())
+    });
+    // The kind of an entry never changes: only its text and status do.
+    let (prefix, is_user, is_assistant) = item.with_untracked(|item| match item {
+        Some(item) => (
+            item_display(item).0,
+            matches!(item, AgentItem::User(_)),
+            matches!(item, AgentItem::Assistant(_)),
+        ),
+        None => ("", false, false),
+    });
+    let text = move || {
+        item.with(|item| item.as_ref().map(|i| item_display(i).1))
+            .unwrap_or_default()
+    };
+    let text_untracked = move || {
+        item.with_untracked(|item| item.as_ref().map(|i| item_display(i).1))
+            .unwrap_or_default()
     };
     // Replies are Markdown; everything else is plain text.
     let body = if is_assistant {
-        let raw = text.clone();
         let agent = window_tab_data.agent.clone();
         stack((
             markdown_view(config, text),
             button(window_tab_data.clone(), "Copy", move || {
-                SystemClipboard::new().put_string(raw.clone());
+                SystemClipboard::new().put_string(text_untracked());
                 agent.show_toast("Copied to clipboard");
             })
             .style(|s| s.margin_top(4.0)),
@@ -156,19 +186,16 @@ fn item_view(window_tab_data: Rc<WindowTabData>, item: AgentItem) -> impl View {
         .style(|s| s.flex_col().items_start().width_full().min_width(0.0))
         .into_any()
     } else if is_user {
-        let edit_text = text.clone();
-        let rerun_text = text.clone();
         let edit_agent = window_tab_data.agent.clone();
         let rerun_agent = window_tab_data.agent.clone();
         stack((
-            label(move || text.clone())
-                .style(|s| s.min_width(0.0).flex_grow(1.0f32)),
+            label(text).style(|s| s.min_width(0.0).flex_grow(1.0f32)),
             stack((
                 button(window_tab_data.clone(), "Edit", move || {
-                    edit_agent.edit_in_input(&edit_text);
+                    edit_agent.edit_in_input(&text_untracked());
                 }),
                 button(window_tab_data.clone(), "Rerun", move || {
-                    rerun_agent.rerun(rerun_text.clone());
+                    rerun_agent.rerun(text_untracked());
                 }),
             ))
             .style(|s| s.margin_top(4.0)),
@@ -176,7 +203,7 @@ fn item_view(window_tab_data: Rc<WindowTabData>, item: AgentItem) -> impl View {
         .style(|s| s.flex_col().items_start().width_full().min_width(0.0))
         .into_any()
     } else {
-        label(move || text.clone())
+        label(text)
             .style(|s| s.min_width(0.0).flex_grow(1.0f32))
             .into_any()
     };
@@ -488,17 +515,13 @@ fn agent_body(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View
     let transcript = scroll(
         dyn_stack(
             {
-                let agent = agent.clone();
-                move || {
-                    agent.state.with(|state| {
-                        state.items.iter().cloned().enumerate().collect::<Vec<_>>()
-                    })
-                }
+                let item_count = agent.memos.item_count;
+                move || (0..item_count.get()).collect::<Vec<_>>()
             },
-            |(index, item)| (*index, item.render_key()),
+            |index| *index,
             {
                 let window_tab_data = window_tab_data.clone();
-                move |(_, item)| item_view(window_tab_data.clone(), item)
+                move |index| item_view(window_tab_data.clone(), index)
             },
         )
         .style(|s| s.flex_col().width_pct(100.0)),
