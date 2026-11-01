@@ -163,6 +163,26 @@ jobs:
           cp target/release-lto/golden-ide target/release-lto/goldenide-proxy LICENSE README.md "$ASSET_NAME/"
           tar czf "$ASSET_NAME.tar.gz" "$ASSET_NAME"
 
+      - name: Package AppImage (Linux)
+        if: startsWith(matrix.os, 'ubuntu')
+        env:
+          APPIMAGETOOL_URL: https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
+          APPIMAGETOOL_SHA256: ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
+          ARCH: x86_64
+        run: |
+          APP_ID=dev.goldenide.goldenide
+          APPDIR=GoldenIDE.AppDir
+          mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/metainfo"
+          cp target/release-lto/golden-ide target/release-lto/goldenide-proxy "$APPDIR/usr/bin/"
+          cp extra/linux/$APP_ID.desktop "$APPDIR/"
+          cp extra/linux/$APP_ID.metainfo.xml "$APPDIR/usr/share/metainfo/"
+          cp extra/images/logo.png "$APPDIR/$APP_ID.png"
+          ln -s usr/bin/golden-ide "$APPDIR/AppRun"
+          curl -fsSL -o appimagetool "$APPIMAGETOOL_URL"
+          echo "$APPIMAGETOOL_SHA256  appimagetool" | sha256sum -c -
+          chmod +x appimagetool
+          ./appimagetool --appimage-extract-and-run "$APPDIR" "$ASSET_NAME.AppImage"
+
       - name: Package (macOS)
         if: startsWith(matrix.os, 'macos')
         run: |
@@ -194,6 +214,7 @@ jobs:
           path: |
             ${{ env.ASSET_NAME }}*.tar.gz
             ${{ env.ASSET_NAME }}*.zip
+            ${{ env.ASSET_NAME }}.AppImage
           retention-days: 1
 
   publish-release:
