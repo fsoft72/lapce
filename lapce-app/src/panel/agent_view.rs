@@ -359,15 +359,27 @@ fn item_view(window_tab_data: Rc<WindowTabData>, index: usize) -> impl View {
     } else if is_user {
         let edit_agent = window_tab_data.agent.clone();
         let rerun_agent = window_tab_data.agent.clone();
+        let stop_agent = window_tab_data.agent.clone();
+        let busy = window_tab_data.agent.memos.busy;
+        // Only the prompt whose turn is running offers Stop instead of Edit and Rerun.
+        let running = create_memo(move |_| {
+            busy.get() && state.with(|s| s.last_user_index()) == Some(index)
+        });
         stack((
             label(text).style(|s| s.min_width(0.0).flex_grow(1.0f32)),
             stack((
                 button(window_tab_data.clone(), "Edit", move || {
                     edit_agent.edit_in_input(&text_untracked());
-                }),
+                })
+                .style(move |s| s.apply_if(running.get(), |s| s.hide())),
                 button(window_tab_data.clone(), "Rerun", move || {
                     rerun_agent.rerun(index);
-                }),
+                })
+                .style(move |s| s.apply_if(running.get(), |s| s.hide())),
+                button(window_tab_data.clone(), "Stop", move || {
+                    stop_agent.cancel();
+                })
+                .style(move |s| s.apply_if(!running.get(), |s| s.hide())),
             ))
             .style(|s| s.margin_top(ITEM_SPACING)),
         ))

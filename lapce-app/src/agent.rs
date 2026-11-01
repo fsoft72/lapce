@@ -248,6 +248,14 @@ impl AgentState {
             .find(|option| option.kind == kind)
     }
 
+    /// Index of the latest prompt of the user, the one whose turn is running
+    /// while the agent is busy.
+    pub fn last_user_index(&self) -> Option<usize> {
+        self.items
+            .iter()
+            .rposition(|item| matches!(item, AgentItem::User { .. }))
+    }
+
     /// The permission request currently shown, if any.
     pub fn current_permission(&self) -> Option<&PendingPermission> {
         self.pending.front()
@@ -1238,6 +1246,17 @@ mod tests {
         assert_eq!(state.current_permission().unwrap().request_id, 2);
         assert_eq!(state.take_pending().unwrap().request_id, 2);
         assert!(state.take_pending().is_none());
+    }
+
+    #[test]
+    fn last_user_index_is_the_latest_prompt() {
+        let mut state = AgentState::default();
+        assert_eq!(state.last_user_index(), None);
+        state.push_user("one", Vec::new());
+        state.apply(&AgentEvent::MessageChunk { text: "a".into() });
+        state.push_user("two", Vec::new());
+        state.apply(&AgentEvent::MessageChunk { text: "b".into() });
+        assert_eq!(state.last_user_index(), Some(2));
     }
 
     #[test]
