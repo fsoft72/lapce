@@ -5,7 +5,7 @@
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleExecutable</key>
-  <string>goldend-ide</string>
+  <string>golden-ide</string>
   <key>CFBundleIdentifier</key>
   <string>io.goldenide</string>
   <key>CFBundleInfoDictionaryVersion</key>

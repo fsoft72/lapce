@@ -30,7 +30,7 @@ cd ~/goldenide
 ```
 
 ```sh
-cargo install --path . --bin goldend-ide --profile release-lto --locked
+cargo install --path . --bin golden-ide --profile release-lto --locked
 ```
 
 > If you use a different distribution, and are having trouble finding appropriate dependencies, let us know in an issue!

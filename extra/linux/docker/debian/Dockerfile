@@ -103,12 +103,12 @@ xx-cargo build \
   --profile release-lto \
   --no-default-features
 
-xx-verify "${CARGO_TARGET_DIR}"/"$(xx-cargo --print-target-triple)"/release-lto/goldend-ide
+xx-verify "${CARGO_TARGET_DIR}"/"$(xx-cargo --print-target-triple)"/release-lto/golden-ide
 
 mkdir -p /target
-mv -v "${CARGO_TARGET_DIR}"/"$(xx-cargo --print-target-triple)"/release-lto/goldend-ide /target/
+mv -v "${CARGO_TARGET_DIR}"/"$(xx-cargo --print-target-triple)"/release-lto/golden-ide /target/
 
-cargo pkgid | cut -d'#' -f2 | cut -d'@' -f2 | cut -d':' -f2 | tee /target/goldend-ide.version
+cargo pkgid | cut -d'#' -f2 | cut -d'@' -f2 | cut -d':' -f2 | tee /target/golden-ide.version
 EOF
 
 WORKDIR /output
@@ -125,7 +125,7 @@ cp '/source/extra/linux/dev.goldenide.goldenide.desktop' './usr/share/applicatio
 cp '/source/extra/linux/dev.goldenide.goldenide.metainfo.xml' './usr/share/metainfo/dev.goldenide.goldenide.metainfo.xml'
 cp '/source/extra/images/logo.png' './usr/share/pixmaps/dev.goldenide.goldenide.png'
 
-mv '/target/goldend-ide' './usr/bin/'
+mv '/target/golden-ide' './usr/bin/'
 
 if [[ "${PACKAGE_NAME}" == "goldenide" ]]; then
   conflicts="goldenide-nightly"
@@ -135,13 +135,13 @@ fi
 
 case "${RELEASE_TAG_NAME}" in
   nightly-*)
-    version=$(cat /target/goldend-ide.version)
+    version=$(cat /target/golden-ide.version)
     commit=$(echo "${RELEASE_TAG_NAME}" | cut -d'-' -f2)
     # date=$(date +%Y%m%d%H%M)
     RELEASE_TAG_NAME="${version}+${commit}"
   ;;
   debug|nightly)
-    version=$(cat /target/goldend-ide.version)
+    version=$(cat /target/golden-ide.version)
     date=$(date +%Y%m%d%H%M)
     RELEASE_TAG_NAME="${version}+${date}"
   ;;
@@ -159,7 +159,7 @@ cat <<- EOL > debian/control
 	Description: Lightning-fast and Powerful Code Editor
 EOL
 
-depends=$(dpkg-shlibdeps -O -e usr/bin/goldend-ide)
+depends=$(dpkg-shlibdeps -O -e usr/bin/golden-ide)
 depends=$(echo "${depends}" | sed 's/shlibs:Depends=//')
 echo "Depends: ${depends}" >> debian/control
 mv debian DEBIAN
@@ -173,10 +173,10 @@ FROM build-base AS dev
 COPY . ./dev
 
 FROM scratch AS binary
-COPY --from=build /output/goldend-ide .
+COPY --from=build /output/golden-ide .
 
 FROM scratch AS cross-binary
-COPY --from=build /output/goldend-ide .
+COPY --from=build /output/golden-ide .
 
 FROM scratch AS package
 COPY --from=build /output/*.deb .

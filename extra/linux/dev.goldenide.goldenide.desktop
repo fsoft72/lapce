@@ -9,12 +9,12 @@ GenericName=Code Editor
 StartupWMClass=goldenide
 
 Icon=dev.goldenide.goldenide
-Exec=goldend-ide %F
+Exec=golden-ide %F
 Terminal=false
 MimeType=text/plain;inode/directory;
 Actions=new-window;
 
 [Desktop Action new-window]
 Name=New Window
-Exec=goldend-ide --new %F
+Exec=golden-ide --new %F
 Icon=dev.goldenide.goldenide

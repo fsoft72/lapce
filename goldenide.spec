@@ -22,7 +22,7 @@ cargo fetch --locked
 cargo build --profile release-lto --package goldenide-app --frozen
 
 %install
-install -Dm755 target/release-lto/goldend-ide %{buildroot}%{_bindir}/goldend-ide
+install -Dm755 target/release-lto/golden-ide %{buildroot}%{_bindir}/golden-ide
 install -Dm644 extra/linux/dev.goldenide.goldenide.desktop %{buildroot}/usr/share/applications/dev.goldenide.goldenide.desktop
 install -Dm644 extra/linux/dev.goldenide.goldenide.metainfo.xml %{buildroot}/usr/share/metainfo/dev.goldenide.goldenide.metainfo.xml
 install -Dm644 extra/images/logo.png %{buildroot}/usr/share/pixmaps/dev.goldenide.goldenide.png
@@ -30,7 +30,7 @@ install -Dm644 extra/images/logo.png %{buildroot}/usr/share/pixmaps/dev.goldenid
 %files
 %license LICENSE*
 %doc *.md
-%{_bindir}/goldend-ide
+%{_bindir}/golden-ide
 /usr/share/applications/dev.goldenide.goldenide.desktop
 /usr/share/metainfo/dev.goldenide.goldenide.metainfo.xml
 /usr/share/pixmaps/dev.goldenide.goldenide.png

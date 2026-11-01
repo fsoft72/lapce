@@ -59,7 +59,7 @@ jobs:
         with:
           name: goldenide-${{ matrix.os }}
           path: |
-            target/ci/goldend-ide*
+            target/ci/golden-ide*
             target/ci/goldenide-proxy*
           retention-days: 1
 

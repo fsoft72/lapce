@@ -6,7 +6,7 @@
 #
 # See `docs/building-from-source.md`.
 
-TARGET = goldend-ide
+TARGET = golden-ide
 
 CODESIGN_IDENTITY = FAC8FBEA99169DC1980731029648F110628D6A32
 

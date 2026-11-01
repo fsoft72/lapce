@@ -5,15 +5,15 @@ authors      = { workspace = true }
 edition      = { workspace = true }
 license      = { workspace = true }
 rust-version = { workspace = true }
-default-run  = "goldend-ide"
+default-run  = "golden-ide"
 
 [dependencies]
 goldenide-app   = { path = "./goldenide-app" }
 goldenide-proxy = { path = "./goldenide-proxy" }
 
 [[bin]]
-name = "goldend-ide"
-path = "goldenide-app/src/bin/goldend-ide.rs"
+name = "golden-ide"
+path = "goldenide-app/src/bin/golden-ide.rs"
 
 [[bin]]
 name = "goldenide-proxy"
@@ -133,7 +133,7 @@ codegen-units = 1
 # See https://doc.rust-lang.org/cargo/reference/profiles.html
 # To use this profile:
 #   cargo build --profile fastdev
-#   cargo run --profile fastdev --bin goldend-ide
+#   cargo run --profile fastdev --bin golden-ide
 [profile.fastdev.package."*"]
 opt-level = 3
 

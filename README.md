@@ -20,11 +20,11 @@ GoldenIDE is a fork of [Lapce](https://github.com/lapce/lapce).
 
 ## Building
 
-The executable is called `goldend-ide`. See the [build guide](docs/building-from-source.md) to compile from source.
+The executable is called `golden-ide`. See the [build guide](docs/building-from-source.md) to compile from source.
 
 ```sh
 cargo build --release
-./target/release/goldend-ide
+./target/release/golden-ide
 ```
 
 ## Contributing

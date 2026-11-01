@@ -140,11 +140,11 @@ export RUSTFLAGS="-C linker=clang -C link-arg=-fuse-ld=/usr/bin/ld.lld"
 export PKG_CONFIG="$(xx-clang --print-prog-name=pkg-config)"
 rustup target add "$(xx-cargo --print-target-triple)"
 export RELEASE_TAG_NAME="${RELEASE_TAG_NAME}"
-xx-cargo build --profile release-lto --bin goldend-ide --frozen
-xx-verify "${CARGO_TARGET_DIR}"/"$(xx-cargo --print-target-triple)"/release-lto/goldend-ide
+xx-cargo build --profile release-lto --bin golden-ide --frozen
+xx-verify "${CARGO_TARGET_DIR}"/"$(xx-cargo --print-target-triple)"/release-lto/golden-ide
 
 %install
-install -Dm755 "${CARGO_TARGET_DIR}"/"$(xx-cargo --print-target-triple)"/release-lto/goldend-ide %{buildroot}%{_bindir}/goldend-ide
+install -Dm755 "${CARGO_TARGET_DIR}"/"$(xx-cargo --print-target-triple)"/release-lto/golden-ide %{buildroot}%{_bindir}/golden-ide
 install -Dm644 extra/linux/dev.goldenide.goldenide.desktop %{buildroot}/usr/share/applications/dev.goldenide.goldenide.desktop
 install -Dm644 extra/linux/dev.goldenide.goldenide.metainfo.xml %{buildroot}/usr/share/metainfo/dev.goldenide.goldenide.metainfo.xml
 install -Dm644 extra/images/logo.png %{buildroot}/usr/share/pixmaps/dev.goldenide.goldenide.png
@@ -152,7 +152,7 @@ install -Dm644 extra/images/logo.png %{buildroot}/usr/share/pixmaps/dev.goldenid
 %files
 %license LICENSE*
 %doc *.md
-%{_bindir}/goldend-ide
+%{_bindir}/golden-ide
 /usr/share/applications/dev.goldenide.goldenide.desktop
 /usr/share/metainfo/dev.goldenide.goldenide.metainfo.xml
 /usr/share/pixmaps/dev.goldenide.goldenide.png
@@ -178,10 +178,10 @@ FROM build-base AS dev
 COPY . ./dev
 
 FROM scratch AS binary
-COPY --from=build /output/goldend-ide .
+COPY --from=build /output/golden-ide .
 
 FROM scratch AS cross-binary
-COPY --from=build /output/goldend-ide .
+COPY --from=build /output/golden-ide .
 
 FROM scratch AS package
 COPY --from=build /output/*.rpm .

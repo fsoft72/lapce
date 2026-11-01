@@ -2,7 +2,7 @@
 
 ## Rebrand to GoldenIDE
 
-- Project renamed from Lapce to GoldenIDE. Executable is `goldend-ide`, remote proxy is `goldenide-proxy`. Crates are now `goldenide-app`, `goldenide-core`, `goldenide-proxy`, `goldenide-rpc` (directories renamed too). Identifiers (`GoldenIdeColor`, `GoldenIdeConfig`, ...), theme color keys (`goldenide.*`), env vars (`GOLDENIDE_*`), per-project dir (`.goldenide`), app id (`dev.goldenide.goldenide`) and packaging files were renamed accordingly. The user config and data directories change name, so existing Lapce settings are not picked up.
+- Project renamed from Lapce to GoldenIDE. Executable is `golden-ide`, remote proxy is `goldenide-proxy`. Crates are now `goldenide-app`, `goldenide-core`, `goldenide-proxy`, `goldenide-rpc` (directories renamed too). Identifiers (`GoldenIdeColor`, `GoldenIdeConfig`, ...), theme color keys (`goldenide.*`), env vars (`GOLDENIDE_*`), per-project dir (`.goldenide`), app id (`dev.goldenide.goldenide`) and packaging files were renamed accordingly. The user config and data directories change name, so existing Lapce settings are not picked up.
 - Kept as is on purpose: the external `lapce-xi-rope` crate, git dependencies from `github.com/lapce/*`, and the wasm plugin ABI (import module `"lapce"`), so existing wasm plugins keep working. `LICENSE` and `CHANGELOG.md` are untouched.
 - Logo images (`extra/images`, icons, `.ico`, `.icns`) are still the Lapce ones and must be replaced with GoldenIDE artwork.
 - README, CONTRIBUTING, About dialog, metainfo and issue templates no longer point to Lapce website, docs, Discord or Matrix. About links to the upstream Lapce repository for attribution.
@@ -29,7 +29,7 @@
 
 ## Build scripts
 
-- Added `scripts/build-release.sh` (release build copied to `bin/goldend-ide`) and `scripts/build-debug.sh` (debug build copied to `bin/goldend-ide-debug`). `bin/` is git-ignored.
+- Added `scripts/build-release.sh` (release build copied to `bin/golden-ide`) and `scripts/build-debug.sh` (debug build copied to `bin/golden-ide-debug`). `bin/` is git-ignored.
 
 ## AI agent panel
 

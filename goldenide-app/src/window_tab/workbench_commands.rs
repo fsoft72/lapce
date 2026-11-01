@@ -727,7 +727,7 @@ impl WindowTabData {
                 self.common.internal_command.send(
                     InternalCommand::ExecuteProcess {
                         program: String::from("osascript"),
-                        arguments: vec![String::from("-e"), format!(r#"do shell script "ln -sf '{}' /usr/local/bin/goldend-ide" with administrator privileges"#, std::env::args().next().unwrap())],
+                        arguments: vec![String::from("-e"), format!(r#"do shell script "ln -sf '{}' /usr/local/bin/golden-ide" with administrator privileges"#, std::env::args().next().unwrap())],
                     }
                 )
             }
@@ -736,7 +736,7 @@ impl WindowTabData {
                 self.common.internal_command.send(
                     InternalCommand::ExecuteProcess {
                         program: String::from("osascript"),
-                        arguments: vec![String::from("-e"), String::from(r#"do shell script "rm /usr/local/bin/goldend-ide" with administrator privileges"#)],
+                        arguments: vec![String::from("-e"), String::from(r#"do shell script "rm /usr/local/bin/golden-ide" with administrator privileges"#)],
                     }
                 )
             }
