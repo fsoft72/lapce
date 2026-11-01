@@ -637,6 +637,17 @@ impl ProxyRpcHandler {
         }
     }
 
+    /// Writes `content` to the file at `path` for the agent, through the open
+    /// buffer when there is one. The answer comes to `f`.
+    pub fn agent_write_file_async(
+        &self,
+        path: PathBuf,
+        content: String,
+        f: impl ProxyCallback + 'static,
+    ) {
+        self.request_async(ProxyRequest::AgentWriteFile { path, content }, f);
+    }
+
     /// Starts (or restarts) the agent session.
     pub fn agent_start(&self, config: AgentServerConfig) {
         self.notification(ProxyNotification::AgentStart { config });

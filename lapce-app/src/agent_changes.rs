@@ -72,6 +72,11 @@ impl ChangedFiles {
         self.files.iter().find(|file| file.path == path)
     }
 
+    /// Forgets the change of `path`.
+    pub fn remove(&mut self, path: &std::path::Path) {
+        self.files.retain(|file| file.path != path);
+    }
+
     /// Forgets every change.
     pub fn clear(&mut self) {
         self.files.clear();

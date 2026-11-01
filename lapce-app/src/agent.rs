@@ -20,7 +20,10 @@ use lapce_rpc::agent::{
     AgentPermissionOption, AgentRequestId, AgentStatus, AgentToolStatus,
 };
 
-use lapce_rpc::proxy::{ProxyResponse, ProxyRpcHandler};
+use lapce_rpc::{
+    RpcError,
+    proxy::{ProxyResponse, ProxyRpcHandler},
+};
 
 use crate::{
     agent_changes::ChangedFiles,
@@ -196,6 +199,12 @@ impl AgentState {
     /// The files the agent changed since the chat started or the last review.
     pub fn changes(&self) -> &ChangedFiles {
         &self.changes
+    }
+
+    /// Removes the file at `path` from the changed files, after it was reverted.
+    pub fn forget_change(&mut self, path: &Path) {
+        self.changes.remove(path);
+        self.changes_revision += 1;
     }
 
     /// Forgets the changed files, after they were approved or reverted.
@@ -929,12 +938,79 @@ impl AgentData {
         self.state.update(|state| state.clear_chat());
     }
 
+    /// Opens a diff tab between the original of the changed file at `path`
+    /// (empty if the agent created it) and the file as it is now.
+    pub fn open_change_diff(&self, path: &Path) {
+        let Some(original) = self.state.with_untracked(|state| {
+            state
+                .changes()
+                .file(path)
+                .map(|file| file.original.clone().unwrap_or_default())
+        }) else {
+            return;
+        };
+        self.main_split.open_text_diff(path.to_path_buf(), original);
+    }
+
+    /// Accepts the changes of the agent: the files stay as they are and the
+    /// list is emptied. Refused while a turn runs, which may still change files.
+    pub fn approve_changes(&self) {
+        if self.state.with_untracked(|state| state.busy) {
+            return self.show_toast("Wait for the agent to finish its turn");
+        }
+        self.state.update(|state| state.clear_changes());
+    }
+
+    /// Puts every changed file back to the text it had before the chat and
+    /// empties the list. A file the agent created is moved to the trash.
+    /// A file that cannot be restored stays in the list, with the error in
+    /// the transcript. Refused while a turn runs.
+    pub fn revert_changes(&self) {
+        if self.state.with_untracked(|state| state.busy) {
+            return self.show_toast("Wait for the agent to finish its turn");
+        }
+        let files = self
+            .state
+            .with_untracked(|state| state.changes().files().to_vec());
+        for file in files {
+            let path = file.path.clone();
+            let state = self.state;
+            let report = create_ext_action(
+                self.common.scope,
+                move |result: Result<ProxyResponse, RpcError>| match result {
+                    Ok(_) => state.update(|state| state.forget_change(&path)),
+                    Err(err) => state.update(|state| {
+                        state.push_error(format!(
+                            "Cannot revert {}: {}",
+                            path.display(),
+                            err.message
+                        ))
+                    }),
+                },
+            );
+            match file.original {
+                Some(original) => self.common.proxy.agent_write_file_async(
+                    file.path,
+                    original,
+                    move |result| report(result),
+                ),
+                None => self
+                    .common
+                    .proxy
+                    .trash_path(file.path, move |result| report(result)),
+            }
+        }
+    }
+
     /// Starts a new conversation: the transcript is cleared and, when an
     /// agent is running, its session is replaced by a fresh one so it keeps
     /// no memory or context of the old chat.
     pub fn new_chat(&self) {
         self.picker.set(None);
-        self.state.update(|state| state.clear_chat());
+        self.state.update(|state| {
+            state.clear_chat();
+            state.clear_changes();
+        });
         let running = self.state.with_untracked(|state| {
             matches!(state.status, AgentStatus::Ready | AgentStatus::Starting)
         });

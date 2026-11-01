@@ -3,6 +3,7 @@
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
+    path::{Path, PathBuf},
     rc::Rc,
     sync::{
         atomic::{AtomicU64, Ordering},
@@ -47,6 +48,9 @@ use crate::{
     markdown::{parse_markdown, split_markdown_blocks, MarkdownContent},
     window_tab::{Focus, WindowTabData},
 };
+
+/// Tallest the list of changed files grows before it scrolls.
+const CHANGES_LIST_MAX_HEIGHT: f32 = 140.0;
 
 /// Vertical padding of the row that shows the agent is working.
 const WORKING_ROW_PADDING_VERT: f32 = 3.0;
@@ -469,6 +473,120 @@ fn permission_bar(
         },
     )
     .style(|s| s.flex_col().width_pct(100.0))
+}
+
+/// The text of a row of the changed files: the path relative to the
+/// workspace, then the number of added and removed lines when known.
+fn change_row_text(
+    path: &Path,
+    root: Option<&Path>,
+    counts: Option<(usize, usize)>,
+) -> String {
+    let shown = root
+        .and_then(|root| path.strip_prefix(root).ok())
+        .unwrap_or(path);
+    match counts {
+        Some((added, removed)) => {
+            format!("{}  +{added} -{removed}", shown.display())
+        }
+        None => shown.display().to_string(),
+    }
+}
+
+/// The files the agent changed, above the prompt box: one row per file (a
+/// click opens its diff in a tab), then the Approve and Revert buttons.
+/// Hidden while the agent changed nothing.
+fn changes_bar(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View {
+    let config = window_tab_data.common.config;
+    let root = window_tab_data.common.workspace.path.clone();
+    let revision = agent.memos.changes_revision;
+    let state = agent.state;
+    let rows = dyn_stack(
+        move || {
+            revision.track();
+            state.with_untracked(|state| {
+                state
+                    .changes()
+                    .files()
+                    .iter()
+                    .map(|file| {
+                        (
+                            file.path.clone(),
+                            change_row_text(
+                                &file.path,
+                                root.as_deref(),
+                                file.line_counts(),
+                            ),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            })
+        },
+        |row| row.clone(),
+        {
+            let agent = agent.clone();
+            move |(path, text): (PathBuf, String)| {
+                let agent = agent.clone();
+                label(move || text.clone())
+                    .on_click_stop(move |_| agent.open_change_diff(&path))
+                    .style(move |s| {
+                        let config = config.get();
+                        s.width_pct(100.0)
+                            .padding_horiz(MENTION_ITEM_PADDING.0)
+                            .padding_vert(MENTION_ITEM_PADDING.1)
+                            .cursor(CursorStyle::Pointer)
+                            .hover(|s| {
+                                s.background(
+                                    config
+                                        .color(LapceColor::PANEL_HOVERED_BACKGROUND),
+                                )
+                            })
+                    })
+            }
+        },
+    )
+    .style(|s| s.flex_col().width_pct(100.0));
+    let buttons = stack((
+        button(window_tab_data.clone(), "Approve changes", {
+            let agent = agent.clone();
+            move || agent.approve_changes()
+        }),
+        button(window_tab_data.clone(), "Revert changes", {
+            let agent = agent.clone();
+            move || agent.revert_changes()
+        }),
+    ))
+    .style(|s| s.padding(PERMISSION_BAR_PADDING));
+    stack((
+        label(move || {
+            revision.track();
+            let count = state.with_untracked(|state| state.changes().files().len());
+            format!("Changed files ({count})")
+        })
+        .style(|s| {
+            s.font_bold()
+                .padding_horiz(MENTION_ITEM_PADDING.0)
+                .padding_top(PICKER_TITLE_PADDING_VERT)
+        }),
+        scroll(rows)
+            .style(|s| s.max_height(CHANGES_LIST_MAX_HEIGHT).width_pct(100.0)),
+        buttons,
+    ))
+    .style(move |s| {
+        let config = config.get();
+        s.flex_col()
+            .width_pct(100.0)
+            .border_top(1.0)
+            .border_color(config.color(LapceColor::LAPCE_BORDER))
+            .background(config.color(LapceColor::PANEL_BACKGROUND))
+            .apply_if(
+                {
+                    revision.track();
+                    state.with_untracked(|state| state.changes().is_empty())
+                },
+                |s| s.hide(),
+            )
+    })
 }
 
 /// The tall "Send" button next to the prompt box.
@@ -895,6 +1013,7 @@ fn agent_body(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View
                 toolbar,
                 transcript,
                 working_row(window_tab_data.clone(), agent.clone()),
+                changes_bar(window_tab_data.clone(), agent.clone()),
                 permission_bar(window_tab_data.clone(), agent.clone()),
                 mention_list(window_tab_data.clone(), agent.clone()),
                 picker_list(window_tab_data.clone(), agent),
@@ -912,7 +1031,22 @@ fn agent_body(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View
 mod tests {
     use floem::keyboard::{KeyCode, PhysicalKey};
 
-    use super::{is_activation_key, working_text};
+    use std::path::Path;
+
+    use super::{change_row_text, is_activation_key, working_text};
+
+    #[test]
+    fn a_change_row_shows_the_relative_path_and_the_counts() {
+        let root = Path::new("/w");
+        assert_eq!(
+            change_row_text(Path::new("/w/src/a.rs"), Some(root), Some((3, 1))),
+            "src/a.rs  +3 -1"
+        );
+        assert_eq!(
+            change_row_text(Path::new("/other/b.rs"), Some(root), None),
+            "/other/b.rs"
+        );
+    }
 
     #[test]
     fn the_working_text_cycles_through_zero_to_three_dots() {

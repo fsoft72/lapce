@@ -309,6 +309,27 @@ impl MainSplitData {
         );
     }
 
+    /// Opens a diff tab between `original` (shown on the left, read-only
+    /// history) and the file at `path` as it is now.
+    pub fn open_text_diff(&self, path: PathBuf, original: String) {
+        let (right, _) = self.get_doc(path.clone(), None);
+        let left = Rc::new(Doc::new_history(
+            self.scope,
+            DocContent::History(DocHistory {
+                path,
+                version: "agent-original".to_string(),
+            }),
+            self.editors,
+            self.common.clone(),
+        ));
+        left.init_content(Rope::from(original));
+        self.get_editor_tab_child(
+            EditorTabChildSource::DiffEditor { left, right },
+            false,
+            false,
+        );
+    }
+
     pub fn open_diff_files(&self, left_path: PathBuf, right_path: PathBuf) {
         let [left, right] =
             [left_path, right_path].map(|path| self.get_doc(path, None).0);
