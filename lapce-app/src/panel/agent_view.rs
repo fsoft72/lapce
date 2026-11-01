@@ -49,6 +49,21 @@ use crate::{
     window_tab::{Focus, WindowTabData},
 };
 
+/// Padding of a row of the changed files (horizontal, vertical).
+const CHANGES_ROW_PADDING: (f32, f32) = (12.0, 5.0);
+
+/// Space between the parts of a row of the changed files.
+const CHANGES_ROW_GAP: f32 = 10.0;
+
+/// Font size of the title of the changed files box.
+const CHANGES_TITLE_FONT_SIZE: f32 = 14.0;
+
+/// Vertical padding of the title of the changed files box.
+const CHANGES_TITLE_PADDING_VERT: f32 = 8.0;
+
+/// Padding of the Approve and Revert buttons (horizontal, vertical).
+const REVIEW_BUTTON_PADDING: (f32, f32) = (16.0, 6.0);
+
 /// Tallest the list of changed files grows before it scrolls.
 const CHANGES_LIST_MAX_HEIGHT: f32 = 140.0;
 
@@ -475,27 +490,123 @@ fn permission_bar(
     .style(|s| s.flex_col().width_pct(100.0))
 }
 
-/// The text of a row of the changed files: the path relative to the
-/// workspace, then the number of added and removed lines when known.
-fn change_row_text(
+/// What a row of the changed files shows.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct ChangeRow {
+    path: PathBuf,
+    /// The file name.
+    name: String,
+    /// The folder of the file, relative to the workspace; empty at its root.
+    folder: String,
+    /// Lines added and removed, when they could be counted.
+    counts: Option<(usize, usize)>,
+}
+
+/// Builds the row of the file at `path`, showing it relative to `root`.
+fn change_row(
     path: &Path,
     root: Option<&Path>,
     counts: Option<(usize, usize)>,
-) -> String {
+) -> ChangeRow {
     let shown = root
         .and_then(|root| path.strip_prefix(root).ok())
         .unwrap_or(path);
-    match counts {
-        Some((added, removed)) => {
-            format!("{}  +{added} -{removed}", shown.display())
-        }
-        None => shown.display().to_string(),
+    ChangeRow {
+        path: path.to_path_buf(),
+        name: shown
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| shown.display().to_string()),
+        folder: shown
+            .parent()
+            .map(|folder| folder.display().to_string())
+            .unwrap_or_default(),
+        counts,
     }
 }
 
-/// The files the agent changed, above the prompt box: one row per file (a
-/// click opens its diff in a tab), then the Approve and Revert buttons.
-/// Hidden while the agent changed nothing.
+/// One row of the changed files: the name, its folder and the line counts,
+/// green for added and red for removed. A click opens the diff.
+fn change_row_view(
+    window_tab_data: Rc<WindowTabData>,
+    agent: AgentData,
+    row: ChangeRow,
+) -> impl View {
+    let config = window_tab_data.common.config;
+    let path = row.path.clone();
+    let (added, removed) = row.counts.unwrap_or_default();
+    let has_counts = row.counts.is_some();
+    stack((
+        label(move || row.name.clone()).style(|s| s.font_bold()),
+        label(move || row.folder.clone()).style(move |s| {
+            s.margin_left(CHANGES_ROW_GAP)
+                .color(config.get().color(LapceColor::EDITOR_DIM))
+        }),
+        empty().style(|s| s.flex_grow(1.0f32)),
+        label(move || format!("+{added}")).style(move |s| {
+            s.margin_left(CHANGES_ROW_GAP)
+                .font_bold()
+                .color(config.get().color(LapceColor::SOURCE_CONTROL_ADDED))
+                .apply_if(!has_counts, |s| s.hide())
+        }),
+        label(move || format!("-{removed}")).style(move |s| {
+            s.margin_left(CHANGES_ROW_GAP)
+                .font_bold()
+                .color(config.get().color(LapceColor::SOURCE_CONTROL_REMOVED))
+                .apply_if(!has_counts, |s| s.hide())
+        }),
+    ))
+    .on_click_stop(move |_| agent.open_change_diff(&path))
+    .style(move |s| {
+        let config = config.get();
+        s.width_pct(100.0)
+            .items_center()
+            .padding_horiz(CHANGES_ROW_PADDING.0)
+            .padding_vert(CHANGES_ROW_PADDING.1)
+            .cursor(CursorStyle::Pointer)
+            .hover(|s| {
+                s.background(config.color(LapceColor::PANEL_HOVERED_BACKGROUND))
+            })
+    })
+}
+
+/// A large button of the changed files box: `accent` colors its border and
+/// text, and fills it when `filled`.
+fn review_button(
+    window_tab_data: Rc<WindowTabData>,
+    text: &'static str,
+    accent: &'static str,
+    filled: bool,
+    on_click: impl Fn() + 'static,
+) -> impl View {
+    let config = window_tab_data.common.config;
+    pressable(label(move || text.to_string()), on_click).style(move |s| {
+        let config = config.get();
+        let color = config.color(accent);
+        s.padding_horiz(REVIEW_BUTTON_PADDING.0)
+            .padding_vert(REVIEW_BUTTON_PADDING.1)
+            .margin_right(BUTTON_GAP)
+            .border(1.5)
+            .border_radius(BUTTON_RADIUS)
+            .border_color(color)
+            .font_bold()
+            .cursor(CursorStyle::Pointer)
+            .color(if filled {
+                config.color(LapceColor::LAPCE_BUTTON_PRIMARY_FOREGROUND)
+            } else {
+                color
+            })
+            .apply_if(filled, |s| s.background(color))
+            .hover(|s| s.border_color(config.color(LapceColor::EDITOR_FOCUS)))
+            .focus_visible(|s| {
+                s.border_color(config.color(LapceColor::EDITOR_FOCUS))
+            })
+    })
+}
+
+/// The files the agent changed, above the prompt box: a highlighted box with
+/// one row per file (a click opens its diff in a tab), then the Approve and
+/// Revert buttons. Hidden while the agent changed nothing.
 fn changes_bar(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View {
     let config = window_tab_data.common.config;
     let root = window_tab_data.common.workspace.path.clone();
@@ -510,14 +621,7 @@ fn changes_bar(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl Vie
                     .files()
                     .iter()
                     .map(|file| {
-                        (
-                            file.path.clone(),
-                            change_row_text(
-                                &file.path,
-                                root.as_deref(),
-                                file.line_counts(),
-                            ),
-                        )
+                        change_row(&file.path, root.as_deref(), file.line_counts())
                     })
                     .collect::<Vec<_>>()
             })
@@ -525,36 +629,32 @@ fn changes_bar(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl Vie
         |row| row.clone(),
         {
             let agent = agent.clone();
-            move |(path, text): (PathBuf, String)| {
-                let agent = agent.clone();
-                label(move || text.clone())
-                    .on_click_stop(move |_| agent.open_change_diff(&path))
-                    .style(move |s| {
-                        let config = config.get();
-                        s.width_pct(100.0)
-                            .padding_horiz(MENTION_ITEM_PADDING.0)
-                            .padding_vert(MENTION_ITEM_PADDING.1)
-                            .cursor(CursorStyle::Pointer)
-                            .hover(|s| {
-                                s.background(
-                                    config
-                                        .color(LapceColor::PANEL_HOVERED_BACKGROUND),
-                                )
-                            })
-                    })
-            }
+            let window_tab_data = window_tab_data.clone();
+            move |row| change_row_view(window_tab_data.clone(), agent.clone(), row)
         },
     )
     .style(|s| s.flex_col().width_pct(100.0));
     let buttons = stack((
-        button(window_tab_data.clone(), "Approve changes", {
-            let agent = agent.clone();
-            move || agent.approve_changes()
-        }),
-        button(window_tab_data.clone(), "Revert changes", {
-            let agent = agent.clone();
-            move || agent.revert_changes()
-        }),
+        review_button(
+            window_tab_data.clone(),
+            "Approve changes",
+            LapceColor::LAPCE_BUTTON_PRIMARY_BACKGROUND,
+            true,
+            {
+                let agent = agent.clone();
+                move || agent.approve_changes()
+            },
+        ),
+        review_button(
+            window_tab_data.clone(),
+            "Revert changes",
+            LapceColor::LAPCE_ERROR,
+            false,
+            {
+                let agent = agent.clone();
+                move || agent.revert_changes()
+            },
+        ),
     ))
     .style(|s| s.padding(PERMISSION_BAR_PADDING));
     stack((
@@ -563,10 +663,12 @@ fn changes_bar(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl Vie
             let count = state.with_untracked(|state| state.changes().files().len());
             format!("Changed files ({count})")
         })
-        .style(|s| {
+        .style(move |s| {
             s.font_bold()
-                .padding_horiz(MENTION_ITEM_PADDING.0)
-                .padding_top(PICKER_TITLE_PADDING_VERT)
+                .font_size(CHANGES_TITLE_FONT_SIZE)
+                .padding_horiz(CHANGES_ROW_PADDING.0)
+                .padding_vert(CHANGES_TITLE_PADDING_VERT)
+                .color(config.get().color(LapceColor::SOURCE_CONTROL_MODIFIED))
         }),
         scroll(rows)
             .style(|s| s.max_height(CHANGES_LIST_MAX_HEIGHT).width_pct(100.0)),
@@ -576,9 +678,9 @@ fn changes_bar(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl Vie
         let config = config.get();
         s.flex_col()
             .width_pct(100.0)
-            .border_top(1.0)
-            .border_color(config.color(LapceColor::LAPCE_BORDER))
-            .background(config.color(LapceColor::PANEL_BACKGROUND))
+            .border_top(2.0)
+            .border_color(config.color(LapceColor::SOURCE_CONTROL_MODIFIED))
+            .background(config.color(LapceColor::EDITOR_BACKGROUND))
             .apply_if(
                 {
                     revision.track();
@@ -1033,19 +1135,18 @@ mod tests {
 
     use std::path::Path;
 
-    use super::{change_row_text, is_activation_key, working_text};
+    use super::{change_row, is_activation_key, working_text};
 
     #[test]
-    fn a_change_row_shows_the_relative_path_and_the_counts() {
+    fn a_change_row_splits_the_name_from_the_relative_folder() {
         let root = Path::new("/w");
-        assert_eq!(
-            change_row_text(Path::new("/w/src/a.rs"), Some(root), Some((3, 1))),
-            "src/a.rs  +3 -1"
-        );
-        assert_eq!(
-            change_row_text(Path::new("/other/b.rs"), Some(root), None),
-            "/other/b.rs"
-        );
+        let row = change_row(Path::new("/w/src/a.rs"), Some(root), Some((3, 1)));
+        assert_eq!((row.name.as_str(), row.folder.as_str()), ("a.rs", "src"));
+        assert_eq!(row.counts, Some((3, 1)));
+        let root_file = change_row(Path::new("/w/b.rs"), Some(root), None);
+        assert_eq!(root_file.folder, "");
+        let outside = change_row(Path::new("/other/c.rs"), Some(root), None);
+        assert_eq!(outside.folder, "/other");
     }
 
     #[test]
