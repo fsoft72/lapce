@@ -16,7 +16,7 @@ use lapce_core::{
     selection::Selection,
 };
 use lapce_rpc::agent::{
-    AgentConfigKind, AgentConfigOption, AgentContext, AgentEvent,
+    AgentConfigChoice, AgentConfigKind, AgentConfigOption, AgentContext, AgentEvent,
     AgentPermissionOption, AgentRequestId, AgentStatus, AgentToolStatus,
 };
 
@@ -31,7 +31,8 @@ use crate::{
     editor::EditorData,
     keypress::{KeyPressFocus, condition::Condition},
     main_split::MainSplitData,
-    window_tab::CommonData,
+    panel::kind::PanelKind,
+    window_tab::{CommonData, Focus},
 };
 
 /// How long closing a window or the app waits for a proxy to confirm that
@@ -40,6 +41,40 @@ const AGENT_STOP_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// How long a toast stays visible.
 const TOAST_DURATION: Duration = Duration::from_millis(1500);
+
+/// How many entries of the picker list are visible at once.
+pub const PICKER_VISIBLE_ITEMS: usize = 10;
+
+/// The choices matching `query`: every word of the query must appear in the
+/// name or the value of the choice, ignoring case. An empty query keeps all.
+pub fn filter_choices(
+    choices: &[AgentConfigChoice],
+    query: &str,
+) -> Vec<AgentConfigChoice> {
+    let query = query.to_lowercase();
+    let words = query.split_whitespace().collect::<Vec<_>>();
+    choices
+        .iter()
+        .filter(|choice| {
+            let text = format!("{} {}", choice.name, choice.value).to_lowercase();
+            words.iter().all(|word| text.contains(word))
+        })
+        .cloned()
+        .collect()
+}
+
+/// The first visible entry of a list of `len` entries that keeps `selected`
+/// in view, moving `top` as little as possible.
+pub fn scroll_top(top: usize, selected: usize, len: usize) -> usize {
+    let top = if selected < top {
+        selected
+    } else if selected >= top + PICKER_VISIBLE_ITEMS {
+        selected + 1 - PICKER_VISIBLE_ITEMS
+    } else {
+        top
+    };
+    top.min(len.saturating_sub(PICKER_VISIBLE_ITEMS))
+}
 
 /// One entry in the chat transcript.
 #[derive(Debug, Clone, PartialEq)]
@@ -436,6 +471,16 @@ pub struct AgentData {
     pub mention_items: Memo<Vec<String>>,
     /// Workspace files (relative paths) that can be mentioned.
     files: RwSignal<Vec<String>>,
+    /// The setting whose value is being picked in the filter list, if any.
+    pub picker: RwSignal<Option<AgentConfigOption>>,
+    /// The text typed in the picker to filter its list.
+    pub picker_query: RwSignal<String>,
+    /// Index of the highlighted entry of the filtered picker list.
+    pub picker_selected: RwSignal<usize>,
+    /// First visible entry of the filtered picker list.
+    pub picker_top: RwSignal<usize>,
+    /// The picker choices matching the query, in the order of the agent.
+    pub picker_items: Memo<Vec<AgentConfigChoice>>,
     /// The short message currently shown over the panel, if any.
     pub toast: RwSignal<Option<String>>,
     /// Counts the toasts shown, so an old timer never hides a newer toast.
@@ -459,8 +504,23 @@ impl AgentData {
             files
                 .with(|files| filter_files(files, &mention.query, MAX_MENTION_ITEMS))
         });
+        let picker = cx.create_rw_signal(None::<AgentConfigOption>);
+        let picker_query = cx.create_rw_signal(String::new());
+        let picker_items = cx.create_memo(move |_| {
+            let query = picker_query.get();
+            picker.with(|option| {
+                option.as_ref().map_or_else(Vec::new, |option| {
+                    filter_choices(&option.choices, &query)
+                })
+            })
+        });
         let state = cx.create_rw_signal(AgentState::default());
         Self {
+            picker,
+            picker_query,
+            picker_selected: cx.create_rw_signal(0),
+            picker_top: cx.create_rw_signal(0),
+            picker_items,
             state,
             memos: AgentStateMemos::new(cx, state),
             main_split,
@@ -581,6 +641,78 @@ impl AgentData {
         };
         self.files
             .with_untracked(|files| mention_contexts(root, files, text, contexts))
+    }
+
+    /// Whether the filter list of a setting is open.
+    pub fn picker_visible(&self) -> bool {
+        self.picker.with_untracked(|picker| picker.is_some())
+    }
+
+    /// Opens the filter list of `option` and gives it the keyboard. The
+    /// highlight starts on the current value.
+    pub fn open_picker(&self, option: AgentConfigOption) {
+        let current = option
+            .choices
+            .iter()
+            .position(|choice| choice.value == option.current)
+            .unwrap_or(0);
+        self.mention.set(None);
+        self.picker_query.set(String::new());
+        self.picker_top
+            .set(scroll_top(0, current, option.choices.len()));
+        self.picker_selected.set(current);
+        self.picker.set(Some(option));
+        self.common.focus.set(Focus::Panel(PanelKind::Agent));
+    }
+
+    /// Closes the filter list without changing anything.
+    pub fn close_picker(&self) {
+        self.picker.set(None);
+    }
+
+    /// Moves the highlight of the picker by `step` entries, wrapping around.
+    fn move_picker_selection(&self, step: isize) {
+        let len = self.picker_items.with_untracked(|items| items.len());
+        if len == 0 {
+            return;
+        }
+        let selected = self.picker_selected.get_untracked() as isize;
+        self.set_picker_selected((selected + step).rem_euclid(len as isize) as usize);
+    }
+
+    /// Highlights entry `index` and scrolls the list to keep it visible.
+    pub fn set_picker_selected(&self, index: usize) {
+        let len = self.picker_items.with_untracked(|items| items.len());
+        self.picker_selected.set(index);
+        self.picker_top
+            .set(scroll_top(self.picker_top.get_untracked(), index, len));
+    }
+
+    /// Changes the setting to the highlighted choice and closes the list.
+    pub fn accept_picker(&self) {
+        let Some(option) = self.picker.get_untracked() else {
+            return;
+        };
+        let choice = self.picker_items.with_untracked(|items| {
+            items.get(self.picker_selected.get_untracked()).cloned()
+        });
+        self.close_picker();
+        if let Some(choice) = choice {
+            self.set_config(&option.id, &choice.value);
+        }
+    }
+
+    /// Adds typed text to the picker filter, or removes the last character
+    /// when `text` is `None`, and highlights the first match.
+    fn edit_picker_query(&self, text: Option<&str>) {
+        self.picker_query.update(|query| match text {
+            Some(text) => query.push_str(text),
+            None => {
+                query.pop();
+            }
+        });
+        self.picker_selected.set(0);
+        self.picker_top.set(0);
     }
 
     /// Asks the agent to change the setting `config_id` to `value`. The
@@ -814,7 +946,7 @@ impl KeyPressFocus for AgentData {
         match condition {
             Condition::PanelFocus => true,
             Condition::ListFocus | Condition::CompletionFocus => {
-                self.mention_visible()
+                self.mention_visible() || self.picker_visible()
             }
             _ => false,
         }
@@ -831,6 +963,24 @@ impl KeyPressFocus for AgentData {
         match &command.kind {
             CommandKind::Workbench(_) => {}
             CommandKind::Scroll(_) => {}
+            CommandKind::Focus(cmd) if self.picker_visible() => {
+                match cmd {
+                    FocusCommand::ListNext => self.move_picker_selection(1),
+                    FocusCommand::ListPrevious => self.move_picker_selection(-1),
+                    FocusCommand::ListSelect => self.accept_picker(),
+                    FocusCommand::ModalClose => self.close_picker(),
+                    _ => return CommandExecuted::No,
+                }
+                return CommandExecuted::Yes;
+            }
+            CommandKind::Edit(edit) if self.picker_visible() => {
+                match edit {
+                    EditCommand::InsertNewLine => self.accept_picker(),
+                    EditCommand::DeleteBackward => self.edit_picker_query(None),
+                    _ => {}
+                }
+                return CommandExecuted::Yes;
+            }
             CommandKind::Focus(cmd) => {
                 if !self.mention_visible() {
                     return CommandExecuted::No;
@@ -869,6 +1019,9 @@ impl KeyPressFocus for AgentData {
 
     /// Types a character into the input box.
     fn receive_char(&self, c: &str) {
+        if self.picker_visible() {
+            return self.edit_picker_query(Some(c));
+        }
         self.input.receive_char(c);
         self.update_mention();
     }
@@ -1297,5 +1450,39 @@ mod tests {
             status: AgentStatus::Starting,
         });
         assert!(state.config_option(AgentConfigKind::Model).is_none());
+    }
+
+    /// Builds a choice with the same name and value.
+    fn choice(name: &str) -> AgentConfigChoice {
+        AgentConfigChoice {
+            value: name.to_lowercase(),
+            name: name.to_string(),
+        }
+    }
+
+    #[test]
+    fn the_filter_needs_every_word_in_any_order_ignoring_case() {
+        let choices = vec![
+            choice("Claude Opus"),
+            choice("Claude Sonnet"),
+            choice("Gemini"),
+        ];
+        assert_eq!(filter_choices(&choices, "").len(), 3);
+        assert_eq!(
+            filter_choices(&choices, "OPUS cl"),
+            vec![choice("Claude Opus")]
+        );
+        assert!(filter_choices(&choices, "gpt").is_empty());
+    }
+
+    #[test]
+    fn the_list_scrolls_only_as_far_as_needed() {
+        let len = 30;
+        assert_eq!(scroll_top(0, 3, len), 0);
+        assert_eq!(scroll_top(0, PICKER_VISIBLE_ITEMS, len), 1);
+        assert_eq!(scroll_top(5, 2, len), 2);
+        assert_eq!(scroll_top(5, 7, len), 5);
+        assert_eq!(scroll_top(0, 29, len), 20);
+        assert_eq!(scroll_top(4, 0, 3), 0);
     }
 }

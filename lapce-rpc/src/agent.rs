@@ -110,6 +110,17 @@ impl AgentConfigOption {
             .find(|choice| choice.value == self.current)
             .map_or(self.current.as_str(), |choice| choice.name.as_str())
     }
+
+    /// The text of the chat box button: the setting name followed by the
+    /// current value, unless the value already starts with the name (such as
+    /// "Thinking: high" for the setting "Thinking").
+    pub fn label(&self) -> String {
+        let value = self.current_name();
+        if value.to_lowercase().starts_with(&self.name.to_lowercase()) {
+            return value.to_string();
+        }
+        format!("{}: {value}", self.name)
+    }
 }
 
 /// Events streamed from the proxy to the UI while an agent session runs.
@@ -207,6 +218,23 @@ mod tests {
         roundtrip(AgentEvent::ConfigOptions {
             options: vec![option],
         });
+    }
+
+    #[test]
+    fn the_label_does_not_repeat_the_setting_name() {
+        let mut option = AgentConfigOption {
+            id: "t".to_string(),
+            name: "Thinking".to_string(),
+            kind: AgentConfigKind::Effort,
+            current: "high".to_string(),
+            choices: vec![AgentConfigChoice {
+                value: "high".to_string(),
+                name: "Thinking: high".to_string(),
+            }],
+        };
+        assert_eq!(option.label(), "Thinking: high");
+        option.choices[0].name = "High".to_string();
+        assert_eq!(option.label(), "Thinking: High");
     }
 
     #[test]

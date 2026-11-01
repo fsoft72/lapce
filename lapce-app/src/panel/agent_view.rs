@@ -12,10 +12,8 @@ use std::{
 
 use floem::{
     IntoView, View,
-    action::show_context_menu,
     event::{Event, EventListener, EventPropagation},
     keyboard::{KeyCode, PhysicalKey},
-    menu::{Menu, MenuItem},
     peniko::kurbo::Rect,
     prelude::SignalTrack,
     reactive::{
@@ -35,13 +33,13 @@ use floem::{
     },
 };
 use lapce_core::{buffer::rope_text::RopeText, register::Clipboard};
-use lapce_rpc::agent::{AgentConfigOption, AgentToolStatus};
+use lapce_rpc::agent::{AgentConfigChoice, AgentConfigOption, AgentToolStatus};
 
 use super::{
     data::PanelSection, kind::PanelKind, position::PanelPosition, view::PanelBuilder,
 };
 use crate::{
-    agent::{AgentData, AgentItem},
+    agent::{AgentData, AgentItem, PICKER_VISIBLE_ITEMS},
     config::{LapceConfig, color::LapceColor},
     editor::view::editor_view,
     markdown::{MarkdownContent, parse_markdown, split_markdown_blocks},
@@ -97,6 +95,9 @@ const USER_PROMPT_PADDING_VERT: f32 = 6.0;
 
 /// Height reserved below the prompt box for the model and effort row.
 const CONFIG_ROW_HEIGHT: f32 = 30.0;
+
+/// Vertical padding of the title line of the filter list.
+const PICKER_TITLE_PADDING_VERT: f32 = 5.0;
 
 /// Space above and below a Markdown horizontal rule.
 const SEPARATOR_MARGIN: f32 = 5.0;
@@ -466,8 +467,8 @@ fn mention_list(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl Vi
     })
 }
 
-/// A button showing the current value of `option`. Clicking it opens a menu
-/// with the other values. It is hidden when the agent does not offer the
+/// A button showing the current value of `option`. Clicking it opens the
+/// filter list of the values. It is hidden when the agent does not offer the
 /// setting, and does nothing while a turn runs.
 fn config_selector(
     window_tab_data: Rc<WindowTabData>,
@@ -478,9 +479,9 @@ fn config_selector(
     let busy = agent.memos.busy;
     let text = move || {
         option.with(|option| {
-            option.as_ref().map_or(String::new(), |option| {
-                format!("{}: {}", option.name, option.current_name())
-            })
+            option
+                .as_ref()
+                .map_or(String::new(), |option| option.label())
         })
     };
     let open_menu = move || {
@@ -490,21 +491,7 @@ fn config_selector(
         if busy.get_untracked() {
             return agent.show_toast("Wait for the agent to finish its turn");
         }
-        let mut menu = Menu::new("");
-        for choice in &option.choices {
-            let marker = if choice.value == option.current {
-                "* "
-            } else {
-                "  "
-            };
-            let (agent, id, value) =
-                (agent.clone(), option.id.clone(), choice.value.clone());
-            menu = menu.entry(
-                MenuItem::new(format!("{marker}{}", choice.name))
-                    .action(move || agent.set_config(&id, &value)),
-            );
-        }
-        show_context_menu(menu, None);
+        agent.open_picker(option);
     };
     pressable(label(text), open_menu).style(move |s| {
         let config = config.get();
@@ -522,6 +509,96 @@ fn config_selector(
             .focus_visible(|s| {
                 s.border_color(config.color(LapceColor::EDITOR_FOCUS))
             })
+    })
+}
+
+/// The filter list of a setting (model, effort), shown above the prompt box:
+/// the text typed so far, then the matching values. Up and Down move the
+/// highlight, Enter picks it and Esc closes the list.
+fn picker_list(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View {
+    let config = window_tab_data.common.config;
+    let (picker, query) = (agent.picker, agent.picker_query);
+    let (items, selected, top) =
+        (agent.picker_items, agent.picker_selected, agent.picker_top);
+    let title = move || {
+        let name = picker.with(|picker| {
+            picker
+                .as_ref()
+                .map(|picker| picker.name.clone())
+                .unwrap_or_default()
+        });
+        format!("{name}: {}|", query.get())
+    };
+    let rows = dyn_stack(
+        move || {
+            let top = top.get();
+            items
+                .get()
+                .into_iter()
+                .enumerate()
+                .skip(top)
+                .take(PICKER_VISIBLE_ITEMS)
+                .collect::<Vec<_>>()
+        },
+        |(index, choice)| (*index, choice.value.clone()),
+        {
+            let agent = agent.clone();
+            move |(index, choice): (usize, AgentConfigChoice)| {
+                let agent = agent.clone();
+                let current = picker.with_untracked(|picker| {
+                    picker
+                        .as_ref()
+                        .is_some_and(|picker| picker.current == choice.value)
+                });
+                let text =
+                    format!("{}{}", if current { "* " } else { "  " }, choice.name);
+                label(move || text.clone())
+                    .on_click_stop(move |_| {
+                        agent.set_picker_selected(index);
+                        agent.accept_picker();
+                    })
+                    .style(move |s| {
+                        let config = config.get();
+                        s.width_pct(100.0)
+                            .padding_horiz(MENTION_ITEM_PADDING.0)
+                            .padding_vert(MENTION_ITEM_PADDING.1)
+                            .cursor(CursorStyle::Pointer)
+                            .apply_if(selected.get() == index, |s| {
+                                s.background(
+                                    config
+                                        .color(LapceColor::PANEL_HOVERED_BACKGROUND),
+                                )
+                            })
+                    })
+            }
+        },
+    )
+    .style(|s| s.flex_col().width_pct(100.0));
+    stack((
+        label(title).style(move |s| {
+            s.width_pct(100.0)
+                .padding_horiz(MENTION_ITEM_PADDING.0)
+                .padding_vert(PICKER_TITLE_PADDING_VERT)
+                .font_bold()
+                .border_bottom(1.0)
+                .border_color(config.get().color(LapceColor::LAPCE_BORDER))
+        }),
+        rows,
+        label(|| "No match".to_string()).style(move |s| {
+            s.padding_horiz(MENTION_ITEM_PADDING.0)
+                .padding_vert(MENTION_ITEM_PADDING.1)
+                .color(config.get().color(LapceColor::EDITOR_DIM))
+                .apply_if(items.with(|items| !items.is_empty()), |s| s.hide())
+        }),
+    ))
+    .style(move |s| {
+        let config = config.get();
+        s.flex_col()
+            .width_pct(100.0)
+            .border_top(1.0)
+            .border_color(config.color(LapceColor::LAPCE_BORDER))
+            .background(config.color(LapceColor::PANEL_BACKGROUND))
+            .apply_if(picker.with(|picker| picker.is_none()), |s| s.hide())
     })
 }
 
@@ -741,7 +818,8 @@ fn agent_body(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View
                 toolbar,
                 transcript,
                 permission_bar(window_tab_data.clone(), agent.clone()),
-                mention_list(window_tab_data.clone(), agent),
+                mention_list(window_tab_data.clone(), agent.clone()),
+                picker_list(window_tab_data.clone(), agent),
                 input,
             ))
             .style(|s| s.flex_col().size_pct(100.0, 100.0)),
