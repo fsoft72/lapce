@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Publish a new version: bump the version in the sources, push master,
-# merge master into the publish branch, push it and go back to master.
+# merge master into the publish branch, tag it v<version>, push branch and
+# tag, and go back to master.
 # Usage: scripts/publish.sh <version>   (e.g. scripts/publish.sh 0.5.0)
 set -euo pipefail
 
@@ -17,7 +18,7 @@ die() {
 }
 
 # Fail unless the version is X.Y.Z, we are on master, the repo is clean
-# and the publish branch exists.
+# the publish branch exists and the tag is not taken.
 check_preconditions() {
     local version="$1"
     [[ "$version" =~ $VERSION_REGEX ]] || die "invalid version '$version' (expected X.Y.Z)"
@@ -26,6 +27,7 @@ check_preconditions() {
     git rev-parse --verify --quiet "refs/heads/$PUBLISH_BRANCH" >/dev/null \
         || git rev-parse --verify --quiet "refs/remotes/$REMOTE/$PUBLISH_BRANCH" >/dev/null \
         || die "branch $PUBLISH_BRANCH does not exist (create it first)"
+    ! git rev-parse --verify --quiet "refs/tags/v$version" >/dev/null || die "tag v$version already exists"
 }
 
 # Replace the version in every file that carries it.
@@ -69,7 +71,8 @@ main() {
 
     git checkout "$PUBLISH_BRANCH"
     git merge "$MAIN_BRANCH"
-    git push "$REMOTE" "$PUBLISH_BRANCH"
+    git tag "v$version"
+    git push "$REMOTE" "$PUBLISH_BRANCH" "v$version"
 }
 
 # Run only when executed, not when sourced (lets tests call the functions)

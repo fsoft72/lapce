@@ -122,5 +122,5 @@
 
 ## Publish script
 
-- Added `scripts/publish.sh <version>`: runs only on a clean `master`, bumps the version (`Cargo.toml`, `Cargo.lock`, macOS `Info.plist`, wix `goldenide.wxs`, `goldenide.spec`), commits, pushes `master`, merges it into `publish`, pushes `publish` and returns to `master`.
+- Added `scripts/publish.sh <version>`: runs only on a clean `master`, bumps the version (`Cargo.toml`, `Cargo.lock`, macOS `Info.plist`, wix `goldenide.wxs`, `goldenide.spec`), commits, pushes `master`, merges it into `publish`, tags the merge `v<version>`, pushes `publish` with the tag and returns to `master`.
 - CI now runs on `master` and `publish`. Executables are built and uploaded only on `publish`; other branches just run `cargo check`.
