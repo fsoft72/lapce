@@ -56,6 +56,9 @@ use crate::{
 /// the transcript keeps following the new content.
 const FOLLOW_END_MARGIN: f64 = 20.0;
 
+/// Space between the boxes of the transcript and the sides of the panel.
+const ITEM_MARGIN_HORIZ: f32 = 8.0;
+
 /// Space between the text of a message and its buttons.
 const BUTTONS_MARGIN_TOP: f32 = 10.0;
 
@@ -490,8 +493,10 @@ fn item_view(window_tab_data: Rc<WindowTabData>, index: usize) -> impl View {
     .style(move |s| {
         let config = config.get();
         // The user's prompts sit in a tinted box so they stand out from the replies.
+        // No fixed width: the column stretches the box between its margins.
         s.flex_col()
-            .width_pct(100.0)
+            .min_width(0.0)
+            .margin_horiz(ITEM_MARGIN_HORIZ)
             .padding_horiz(ITEM_PADDING.0)
             .padding_vert(ITEM_PADDING.1)
             .apply_if(is_user, |s| {
