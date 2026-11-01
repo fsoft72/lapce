@@ -100,3 +100,4 @@
 - The Markdown answers of the agent can now be selected with the mouse and copied with Ctrl+C (Cmd+C on macOS). Floem's `rich_text` has no selection, so the new `panel::selectable_text` view draws the selection on a canvas under the text and handles the pointer and copy events; the text is still laid out by `rich_text`. Only the Markdown text blocks are selectable (not code images or separators), and a selection stays inside one block. (Not verified by hand in the running app.)
 - The agent transcript scrolls down by itself as content is added (streamed text, tool calls), unless the user scrolled up; scrolling back to the end, or sending a new prompt, makes it follow again. The rule is the pure `follow_after_scroll`. (Not verified by hand in the running app.)
 - The boxes of the agent transcript have a small left and right margin, so they no longer touch the sides of the panel.
+- The title of each transcript box ("Agent", "Thinking"...) has 6px of space below it.

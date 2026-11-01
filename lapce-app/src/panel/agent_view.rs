@@ -59,6 +59,9 @@ const FOLLOW_END_MARGIN: f64 = 20.0;
 /// Space between the boxes of the transcript and the sides of the panel.
 const ITEM_MARGIN_HORIZ: f32 = 8.0;
 
+/// Space between the title of a box ("Agent", "Thinking"...) and its text.
+const ITEM_TITLE_MARGIN_BOTTOM: f32 = 6.0;
+
 /// Space between the text of a message and its buttons.
 const BUTTONS_MARGIN_TOP: f32 = 10.0;
 
@@ -486,6 +489,7 @@ fn item_view(window_tab_data: Rc<WindowTabData>, index: usize) -> impl View {
     stack((
         label(move || prefix.to_string()).style(move |s| {
             s.font_bold()
+                .margin_bottom(ITEM_TITLE_MARGIN_BOTTOM)
                 .color(config.get().color(LapceColor::EDITOR_DIM))
         }),
         body,
