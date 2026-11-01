@@ -1,15 +1,10 @@
 use std::{
-    io::{BufReader, Write},
-    path::Path,
+    io::BufReader,
     process::{Command, Stdio},
 };
 
 use anyhow::{Result, anyhow};
-use flate2::read::GzDecoder;
-use lapce_core::{
-    directory::Directory,
-    meta::{self, ReleaseType},
-};
+use lapce_core::meta::{self, ReleaseType};
 use lapce_rpc::{
     RpcMessage,
     core::CoreRpcHandler,
@@ -19,8 +14,6 @@ use lapce_rpc::{
 use thiserror::Error;
 use tracing::{debug, error};
 
-const UNIX_PROXY_SCRIPT: &[u8] = include_bytes!("../../../extra/proxy.sh");
-const WINDOWS_PROXY_SCRIPT: &[u8] = include_bytes!("../../../extra/proxy.ps1");
 
 #[derive(Clone, Copy, Error, Debug, PartialEq, Eq, strum_macros::Display)]
 #[strum(ascii_case_insensitive)]
@@ -68,7 +61,6 @@ pub trait Remote: Sized {
         Ok(String::from_utf8(cmd.stdout)?)
     }
 
-    fn upload_file(&self, local: impl AsRef<Path>, remote: &str) -> Result<()>;
 
     fn command_builder(&self) -> Command;
 }
@@ -131,13 +123,9 @@ pub fn start_remote(
         })
         .unwrap_or(false)
     {
-        download_remote(
-            &remote,
-            &platform,
-            &architecture,
-            &remote_proxy_path,
-            &remote_proxy_file,
-        )?;
+        return Err(anyhow!(
+            "remote proxy not found at {remote_proxy_file} (platform: {platform}, architecture: {architecture}); automatic download is disabled, install it manually"
+        ));
     };
 
     debug!("remote proxy path: {remote_proxy_path}");
@@ -239,151 +227,6 @@ pub fn start_remote(
             }
             RpcMessage::Error(id, err) => {
                 proxy_rpc.handle_response(id, Err(err));
-            }
-        }
-    }
-
-    Ok(())
-}
-
-fn download_remote(
-    remote: &impl Remote,
-    platform: &HostPlatform,
-    architecture: &HostArchitecture,
-    remote_proxy_path: &str,
-    remote_proxy_file: &str,
-) -> Result<()> {
-    use base64::{Engine as _, engine::general_purpose};
-
-    let script_install = match platform {
-        HostPlatform::Windows => {
-            let local_proxy_script =
-                Directory::proxy_directory().unwrap().join("proxy.ps1");
-
-            let mut proxy_script = std::fs::OpenOptions::new()
-                .create(true)
-                .write(true)
-                .truncate(true)
-                .open(&local_proxy_script)?;
-            proxy_script.write_all(WINDOWS_PROXY_SCRIPT)?;
-
-            let remote_proxy_script = "${env:TEMP}\\lapce-proxy.ps1";
-            remote.upload_file(local_proxy_script, remote_proxy_script)?;
-
-            let cmd = remote
-                .command_builder()
-                .args([
-                    "powershell",
-                    "-c",
-                    remote_proxy_script,
-                    "-version",
-                    meta::VERSION,
-                    "-directory",
-                    remote_proxy_path,
-                ])
-                .output()?;
-            debug!("{}", String::from_utf8_lossy(&cmd.stderr));
-            debug!("{}", String::from_utf8_lossy(&cmd.stdout));
-
-            cmd.status
-        }
-        _ => {
-            let proxy_script = general_purpose::STANDARD.encode(UNIX_PROXY_SCRIPT);
-
-            let version = match meta::RELEASE {
-                ReleaseType::Debug => "nightly".to_string(),
-                ReleaseType::Nightly => "nightly".to_string(),
-                ReleaseType::Stable => format!("v{}", meta::VERSION),
-            };
-            let cmd = remote
-                .command_builder()
-                .args([
-                    "echo",
-                    &proxy_script,
-                    "|",
-                    "base64",
-                    "-d",
-                    "|",
-                    "sh",
-                    "/dev/stdin",
-                    &version,
-                    remote_proxy_path,
-                ])
-                .output()?;
-
-            debug!("{}", String::from_utf8_lossy(&cmd.stderr));
-            debug!("{}", String::from_utf8_lossy(&cmd.stdout));
-
-            cmd.status
-        }
-    };
-
-    if !script_install.success() {
-        let cmd = match platform {
-            HostPlatform::Windows => remote
-                .command_builder()
-                .args(["dir", remote_proxy_file])
-                .status()?,
-            _ => remote
-                .command_builder()
-                .arg("test")
-                .arg("-e")
-                .arg(remote_proxy_file)
-                .status()?,
-        };
-        if !cmd.success() {
-            let proxy_filename = format!("lapce-proxy-{platform}-{architecture}");
-            let local_proxy_file = Directory::proxy_directory()
-                .ok_or_else(|| anyhow!("can't find proxy directory"))?
-                .join(&proxy_filename);
-            // remove possibly outdated proxy
-            if local_proxy_file.exists() {
-                // TODO: add proper proxy version detection and update proxy
-                // when needed
-                std::fs::remove_file(&local_proxy_file)?;
-            }
-            let proxy_version = match meta::RELEASE {
-                meta::ReleaseType::Stable => meta::VERSION,
-                _ => "nightly",
-            };
-            let url = format!(
-                "https://github.com/lapce/lapce/releases/download/{proxy_version}/{proxy_filename}.gz"
-            );
-            debug!("proxy download URI: {url}");
-            let mut resp = lapce_proxy::get_url(url, None).expect("request failed");
-            if resp.status().is_success() {
-                let mut out = std::fs::File::create(&local_proxy_file)
-                    .expect("failed to create file");
-                let mut gz = GzDecoder::new(&mut resp);
-                std::io::copy(&mut gz, &mut out).expect("failed to copy content");
-            } else {
-                error!("proxy download failed with: {}", resp.status());
-            }
-
-            match platform {
-                // Windows creates all dirs in provided path
-                HostPlatform::Windows => remote
-                    .command_builder()
-                    .arg("mkdir")
-                    .arg(remote_proxy_path)
-                    .status()?,
-                // Unix needs -p to do same
-                _ => remote
-                    .command_builder()
-                    .arg("mkdir")
-                    .arg("-p")
-                    .arg(remote_proxy_path)
-                    .status()?,
-            };
-
-            remote.upload_file(&local_proxy_file, remote_proxy_file)?;
-            if platform != &HostPlatform::Windows {
-                remote
-                    .command_builder()
-                    .arg("chmod")
-                    .arg("+x")
-                    .arg(remote_proxy_file)
-                    .status()?;
             }
         }
     }
