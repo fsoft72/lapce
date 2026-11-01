@@ -79,6 +79,9 @@ pub fn scroll_top(top: usize, selected: usize, len: usize) -> usize {
 /// Stop reason (the `Debug` form of the ACP one) of a turn that finished normally.
 const END_TURN_STOP_REASON: &str = "EndTurn";
 
+/// Shown when a turn ends normally after the agent answered.
+const TURN_COMPLETED_MESSAGE: &str = "Task completed";
+
 /// Shown when a turn ends normally without any answer. Some agents, such as
 /// `pi-acp`, hide a model error (expired login, missing API key) this way.
 const EMPTY_TURN_MESSAGE: &str = "The agent ended the turn without any response. \
@@ -387,11 +390,16 @@ impl AgentState {
                 }
             }
             AgentEvent::TurnEnded { stop_reason } => {
-                let empty = stop_reason == END_TURN_STOP_REASON
-                    && !self.turn_produced_output();
+                let ended = stop_reason == END_TURN_STOP_REASON;
+                let completed = ended && self.turn_produced_output();
+                let empty = ended && !completed;
                 self.reset_turn();
                 if empty {
                     self.push_item(AgentItem::Error(EMPTY_TURN_MESSAGE.to_string()));
+                } else if completed {
+                    self.push_item(AgentItem::Note(
+                        TURN_COMPLETED_MESSAGE.to_string(),
+                    ));
                 }
             }
             AgentEvent::Error { message } => {
@@ -1258,7 +1266,7 @@ mod tests {
         });
         assert_eq!(
             state.items.back(),
-            Some(&AgentItem::Assistant("hello".into()))
+            Some(&AgentItem::Note(TURN_COMPLETED_MESSAGE.to_string()))
         );
 
         state.push_user("again", Vec::new());

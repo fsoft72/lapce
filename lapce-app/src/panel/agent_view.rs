@@ -5,32 +5,34 @@ use std::{
     hash::{Hash, Hasher},
     rc::Rc,
     sync::{
-        Arc,
         atomic::{AtomicU64, Ordering},
+        Arc,
     },
+    time::Duration,
 };
 
 use floem::{
-    IntoView, View,
+    action::exec_after,
     event::{Event, EventListener, EventPropagation},
     keyboard::{KeyCode, PhysicalKey},
     peniko::kurbo::Rect,
     prelude::SignalTrack,
     reactive::{
-        Memo, ReadSignal, SignalGet, SignalUpdate, SignalWith, create_memo,
-        create_rw_signal,
+        create_effect, create_memo, create_rw_signal, Memo, ReadSignal, RwSignal,
+        SignalGet, SignalUpdate, SignalWith,
     },
     style::CursorStyle,
     views::{
-        Decorators, container, dyn_stack,
+        container, dyn_stack,
         editor::{
-            WrapProp,
             text::SystemClipboard,
             text::WrapMethod,
-            view::{LineRegion, cursor_caret},
+            view::{cursor_caret, LineRegion},
+            WrapProp,
         },
-        empty, label, rich_text, scroll, stack,
+        empty, label, rich_text, scroll, stack, Decorators,
     },
+    IntoView, View,
 };
 use lapce_core::{buffer::rope_text::RopeText, register::Clipboard};
 use lapce_rpc::agent::{AgentConfigChoice, AgentConfigOption, AgentToolStatus};
@@ -40,11 +42,20 @@ use super::{
 };
 use crate::{
     agent::{AgentData, AgentItem, PICKER_VISIBLE_ITEMS},
-    config::{LapceConfig, color::LapceColor},
+    config::{color::LapceColor, LapceConfig},
     editor::view::editor_view,
-    markdown::{MarkdownContent, parse_markdown, split_markdown_blocks},
+    markdown::{parse_markdown, split_markdown_blocks, MarkdownContent},
     window_tab::{Focus, WindowTabData},
 };
+
+/// Vertical padding of the row that shows the agent is working.
+const WORKING_ROW_PADDING_VERT: f32 = 3.0;
+
+/// Time between two steps of the "working" animation.
+const WORKING_TICK: Duration = Duration::from_millis(400);
+
+/// Number of steps of the "working" animation (zero to three dots).
+const WORKING_STEPS: usize = 4;
 
 /// Line height factor used when rendering Markdown replies.
 const MARKDOWN_LINE_HEIGHT: f64 = 1.8;
@@ -132,6 +143,54 @@ pub fn agent_panel(
         )
         .build()
         .debug_name("Agent Panel")
+}
+
+/// The text of the activity row for animation step `step`: "Working" followed
+/// by zero to three dots, so the user sees the agent has not stalled.
+fn working_text(step: usize) -> String {
+    format!("Working{}", ".".repeat(step % WORKING_STEPS))
+}
+
+/// Advances `step` every [`WORKING_TICK`] while `busy` is set. `generation`
+/// makes a loop stop when a newer one started, so a quick busy, idle, busy
+/// sequence does not leave two loops running.
+fn run_working_animation(
+    busy: Memo<bool>,
+    step: RwSignal<usize>,
+    generation: RwSignal<u64>,
+    id: u64,
+) {
+    exec_after(WORKING_TICK, move |_| {
+        if generation.get_untracked() != id || !busy.get_untracked() {
+            return;
+        }
+        step.update(|step| *step += 1);
+        run_working_animation(busy, step, generation, id);
+    });
+}
+
+/// A row under the transcript that is visible while a turn runs, with an
+/// animated "Working..." text.
+fn working_row(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View {
+    let config = window_tab_data.common.config;
+    let busy = agent.memos.busy;
+    let step = create_rw_signal(0usize);
+    let generation = create_rw_signal(0u64);
+    create_effect(move |_| {
+        let id = generation.get_untracked() + 1;
+        generation.set(id);
+        if busy.get() {
+            step.set(0);
+            run_working_animation(busy, step, generation, id);
+        }
+    });
+    label(move || working_text(step.get())).style(move |s| {
+        s.width_pct(100.0)
+            .padding_horiz(PANEL_PADDING)
+            .padding_vert(WORKING_ROW_PADDING_VERT)
+            .color(config.get().color(LapceColor::EDITOR_DIM))
+            .apply_if(!busy.get(), |s| s.hide())
+    })
 }
 
 /// Whether `key` presses a focused button: Enter, keypad Enter or Space,
@@ -817,6 +876,7 @@ fn agent_body(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View
             stack((
                 toolbar,
                 transcript,
+                working_row(window_tab_data.clone(), agent.clone()),
                 permission_bar(window_tab_data.clone(), agent.clone()),
                 mention_list(window_tab_data.clone(), agent.clone()),
                 picker_list(window_tab_data.clone(), agent),
@@ -834,7 +894,16 @@ fn agent_body(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View
 mod tests {
     use floem::keyboard::{KeyCode, PhysicalKey};
 
-    use super::is_activation_key;
+    use super::{is_activation_key, working_text};
+
+    #[test]
+    fn the_working_text_cycles_through_zero_to_three_dots() {
+        let texts: Vec<_> = (0..5).map(working_text).collect();
+        assert_eq!(
+            texts,
+            ["Working", "Working.", "Working..", "Working...", "Working"]
+        );
+    }
 
     #[test]
     fn enter_and_space_press_a_focused_button() {
