@@ -129,3 +129,9 @@
 
 - `authors` in `Cargo.toml` and `developer_name` in `metainfo.xml` are now `GoldenIDE`.
 - The metainfo screenshot URL now points to `fsoft72/goldenide` on `master` (the repository name is a placeholder until the project is hosted).
+
+## CI releases
+
+- `ci.yml`: `build` job is now a plain `cargo check` plus doc tests on every branch (no executables).
+- New `release` job, only on the `publish` branch: builds with the `release-lto` profile on Linux, Windows and macOS (arm64) and packages `golden-ide` + `goldenide-proxy`. Assets are named `<ASSET_PREFIX>-<version>-<platform>` (`golden-ide-0.5.0-linux-x86_64.tar.gz`, `...-windows-x86_64.zip`, `...-windows-x86_64-portable.zip`, `...-macos-arm64.zip`). The prefix is the `ASSET_PREFIX` env var at the top of the workflow.
+- New `publish-release` job: creates the GitHub release `v<version>` (tag pushed by `scripts/publish.sh`) with all assets, or uploads them with `--clobber` if it already exists. The macOS bundle is unsigned (the Makefile signing identity is not available in CI).

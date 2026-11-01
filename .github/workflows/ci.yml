@@ -19,6 +19,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  # Release assets are named <ASSET_PREFIX>-<version>-<platform>
+  ASSET_PREFIX: golden-ide
   CARGO_TERM_COLOR: always
   CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
 
@@ -53,28 +55,8 @@ jobs:
       - name: Fetch dependencies
         run: cargo fetch --locked
 
-      # Executables are built only on the publish branch
-      - name: Build
-        if: github.ref == 'refs/heads/publish'
-        run: cargo build --profile ci --frozen
-
-      # Any other branch only type-checks, no executables are produced
       - name: Check
-        if: github.ref != 'refs/heads/publish'
         run: cargo check --profile ci --frozen --workspace
-
-      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
-        if: github.ref == 'refs/heads/publish'
-        with:
-          name: goldenide-${{ matrix.os }}
-          path: |
-            target/ci/golden-ide*
-            target/ci/goldenide-proxy*
-          retention-days: 1
-
-      - name: Build as portable
-        if: startsWith(matrix.os, 'windows') && github.ref == 'refs/heads/publish'
-        run: cargo build --profile ci --frozen --features goldenide-app/portable
 
       - name: Free space on Windows
         if: startsWith(matrix.os, 'windows')
@@ -127,3 +109,117 @@ jobs:
 
       - name: Run clippy
         run: cargo clippy --profile ci
+
+  release:
+    name: Package ${{ matrix.platform }}
+    # Releases are produced only from the publish branch
+    if: github.ref == 'refs/heads/publish'
+    needs: [fmt, clippy, build]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-x86_64
+          - os: windows-latest
+            platform: windows-x86_64
+          - os: macos-latest
+            platform: macos-arm64
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Install dependencies on Ubuntu
+        if: startsWith(matrix.os, 'ubuntu')
+        run: sudo make ubuntu-deps
+
+      - name: Update toolchain
+        run: rustup update --no-self-update
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4
+
+      - name: Fetch dependencies
+        run: cargo fetch --locked
+
+      - name: Read version
+        run: |
+          VERSION=$(sed -n 's/^version *= *"\(.*\)"/\1/p' Cargo.toml | head -1)
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "ASSET_NAME=${ASSET_PREFIX}-${VERSION}-${{ matrix.platform }}" >> "$GITHUB_ENV"
+
+      - name: Build release
+        run: cargo build --profile release-lto --frozen
+
+      - name: Package (Linux)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          mkdir "$ASSET_NAME"
+          cp target/release-lto/golden-ide target/release-lto/goldenide-proxy LICENSE README.md "$ASSET_NAME/"
+          tar czf "$ASSET_NAME.tar.gz" "$ASSET_NAME"
+
+      - name: Package (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          mkdir "$ASSET_NAME"
+          cp -R extra/macos/GoldenIDE.app "$ASSET_NAME/"
+          cp target/release-lto/golden-ide "$ASSET_NAME/GoldenIDE.app/Contents/MacOS/"
+          cp target/release-lto/goldenide-proxy LICENSE README.md "$ASSET_NAME/"
+          zip -qr "$ASSET_NAME.zip" "$ASSET_NAME"
+
+      - name: Package (Windows)
+        if: startsWith(matrix.os, 'windows')
+        run: |
+          mkdir "$ASSET_NAME"
+          cp target/release-lto/golden-ide.exe target/release-lto/goldenide-proxy.exe LICENSE README.md "$ASSET_NAME/"
+          7z a -tzip "$ASSET_NAME.zip" "$ASSET_NAME"
+
+      - name: Package portable (Windows)
+        if: startsWith(matrix.os, 'windows')
+        run: |
+          cargo build --profile release-lto --frozen --features goldenide-app/portable
+          PORTABLE_NAME="$ASSET_NAME-portable"
+          mkdir "$PORTABLE_NAME"
+          cp target/release-lto/golden-ide.exe LICENSE README.md "$PORTABLE_NAME/"
+          7z a -tzip "$PORTABLE_NAME.zip" "$PORTABLE_NAME"
+
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: release-${{ matrix.platform }}
+          path: |
+            ${{ env.ASSET_NAME }}*.tar.gz
+            ${{ env.ASSET_NAME }}*.zip
+          retention-days: 1
+
+  publish-release:
+    name: Create GitHub release
+    if: github.ref == 'refs/heads/publish'
+    needs: [release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: assets
+          pattern: release-*
+          merge-multiple: true
+
+      - name: Create or update the release
+        run: |
+          VERSION=$(sed -n 's/^version *= *"\(.*\)"/\1/p' Cargo.toml | head -1)
+          TAG="v$VERSION"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" assets/* --clobber
+          else
+            gh release create "$TAG" assets/* --title "GoldenIDE $VERSION" --generate-notes --target "$GITHUB_SHA"
+          fi
