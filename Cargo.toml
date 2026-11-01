@@ -27,7 +27,7 @@ version      = "0.4.6"
 edition      = "2024"
 rust-version = "1.98.0"
 license      = "Apache-2.0"
-authors      = ["Dongdong Zhou <dzhou121@gmail.com>"]
+authors      = ["GoldenIDE"]
 
 [workspace.dependencies]
 anyhow            = { version = "1.0" }

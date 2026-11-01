@@ -124,3 +124,8 @@
 
 - Added `scripts/publish.sh <version>`: runs only on a clean `master`, bumps the version (`Cargo.toml`, `Cargo.lock`, macOS `Info.plist`, wix `goldenide.wxs`, `goldenide.spec`, Linux `metainfo.xml` with a new `<release>` entry and product name forced to `GoldenIDE`), commits, pushes `master`, merges it into `publish`, tags the merge `v<version>`, pushes `publish` with the tag and returns to `master`.
 - CI now runs on `master` and `publish`. Executables are built and uploaded only on `publish`; other branches just run `cargo check`.
+
+## Authorship and screenshot URL
+
+- `authors` in `Cargo.toml` and `developer_name` in `metainfo.xml` are now `GoldenIDE`.
+- The metainfo screenshot URL now points to `fsoft72/goldenide` on `master` (the repository name is a placeholder until the project is hosted).
