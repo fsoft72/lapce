@@ -34,14 +34,15 @@ use floem::{
             text::WrapMethod,
             view::{LineRegion, cursor_caret},
         },
-        empty, label, rich_text, scroll, stack,
+        empty, label, scroll, stack,
     },
 };
 use lapce_core::{buffer::rope_text::RopeText, register::Clipboard};
 use lapce_rpc::agent::{AgentConfigChoice, AgentConfigOption, AgentToolStatus};
 
 use super::{
-    data::PanelSection, kind::PanelKind, position::PanelPosition, view::PanelBuilder,
+    data::PanelSection, kind::PanelKind, position::PanelPosition,
+    selectable_text::selectable_text, view::PanelBuilder,
 };
 use crate::{
     agent::{AgentData, AgentItem, PICKER_VISIBLE_ITEMS},
@@ -322,10 +323,12 @@ fn markdown_block_view(
         move || parse_markdown(&block, MARKDOWN_LINE_HEIGHT, &config.get()),
         move |_| id.fetch_add(1, Ordering::Relaxed),
         move |content| match content {
-            MarkdownContent::Text(text_layout) => container(
-                rich_text(move || text_layout.clone()).style(|s| s.width_full()),
-            )
-            .style(|s| s.width_full()),
+            MarkdownContent::Text(text_layout) => {
+                container(selectable_text(text_layout, move || {
+                    config.get_untracked().color(LapceColor::EDITOR_SELECTION)
+                }))
+                .style(|s| s.width_full())
+            }
             MarkdownContent::Image { .. } => container(empty()),
             MarkdownContent::Separator => container(empty().style(move |s| {
                 s.width_full()
