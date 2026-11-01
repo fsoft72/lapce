@@ -30,7 +30,7 @@ check_preconditions() {
     ! git rev-parse --verify --quiet "refs/tags/v$version" >/dev/null || die "tag v$version already exists"
 }
 
-# Replace the version in every file that carries it.
+# Replace the version in every file that carries it and update the metainfo.
 bump_version() {
     local version="$1"
 
@@ -48,6 +48,12 @@ bump_version() {
     # RPM spec
     sed -i -E "s/^(Version:[[:space:]]+)[0-9]+\.[0-9]+\.[0-9]+/\1$version/" goldenide.spec
 
+    # AppStream metadata: product name and a new release entry (newest first)
+    local metainfo="extra/linux/dev.goldenide.goldenide.metainfo.xml"
+    sed -i -E "s|^(\s*<name>)[^<]*(</name>)|\1GoldenIDE\2|" "$metainfo"
+    grep -q "<release version=\"$version\"" "$metainfo" \
+        || sed -i "s|^\(\s*\)<releases>|&\n\1    <release version=\"$version\" date=\"$(date +%F)\" />|" "$metainfo"
+
     # Refresh the workspace crate versions in Cargo.lock
     cargo update --workspace --offline
 }
@@ -62,7 +68,8 @@ main() {
 
     bump_version "$version"
     git add Cargo.toml Cargo.lock extra/macos/GoldenIDE.app/Contents/Info.plist \
-        extra/windows/wix/goldenide.wxs goldenide.spec
+        extra/windows/wix/goldenide.wxs goldenide.spec \
+        extra/linux/dev.goldenide.goldenide.metainfo.xml
     git commit -m "chore: bump version to $version"
     git push "$REMOTE" "$MAIN_BRANCH"
 
