@@ -833,10 +833,6 @@ fn agent_body(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View
             let agent = agent.clone();
             move || agent.restart()
         }),
-        button(window_tab_data.clone(), "Cancel", {
-            let agent = agent.clone();
-            move || agent.cancel()
-        }),
         label({
             let status = agent.memos.status;
             move || status.with(|status| status.to_string())
