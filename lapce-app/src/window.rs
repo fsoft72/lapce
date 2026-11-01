@@ -5,8 +5,7 @@ use floem::{
     action::TimerToken,
     peniko::kurbo::{Point, Size},
     reactive::{
-        Memo, ReadSignal, RwSignal, Scope, SignalGet, SignalUpdate, SignalWith,
-        use_context,
+        Memo, RwSignal, Scope, SignalGet, SignalUpdate, SignalWith, use_context,
     },
     window::WindowId,
 };
@@ -19,7 +18,6 @@ use crate::{
     db::LapceDb,
     keypress::EventRef,
     listener::Listener,
-    update::ReleaseInfo,
     window_tab::WindowTabData,
     workspace::LapceWorkspace,
 };
@@ -46,7 +44,6 @@ pub struct WindowCommonData {
     pub num_window_tabs: Memo<usize>,
     pub window_maximized: RwSignal<bool>,
     pub window_tab_header_height: RwSignal<f64>,
-    pub latest_release: ReadSignal<Arc<Option<ReleaseInfo>>>,
     pub ime_allowed: RwSignal<bool>,
     pub cursor_blink_timer: RwSignal<TimerToken>,
     // the value to be update by cursor blinking
@@ -101,7 +98,6 @@ impl WindowData {
         app_view_id: RwSignal<ViewId>,
         info: WindowInfo,
         window_scale: RwSignal<f64>,
-        latest_release: ReadSignal<Arc<Option<ReleaseInfo>>>,
         extra_plugin_paths: Arc<Vec<PathBuf>>,
         app_command: Listener<AppCommand>,
     ) -> Self {
@@ -130,7 +126,6 @@ impl WindowData {
             num_window_tabs,
             window_maximized,
             window_tab_header_height,
-            latest_release,
             ime_allowed,
             cursor_blink_timer,
             hide_cursor,

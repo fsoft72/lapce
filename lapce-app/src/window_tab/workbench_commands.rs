@@ -1,6 +1,6 @@
 //! Workbench command handling of a window tab, including the font zoom commands.
 
-use std::{collections::HashSet, env, time::Instant};
+use std::{collections::HashSet, time::Instant};
 
 use floem::{
     action::open_file,
@@ -9,7 +9,7 @@ use floem::{
     reactive::{Scope, SignalGet, SignalUpdate, SignalWith},
     views::editor::core::buffer::rope_text::RopeText,
 };
-use lapce_core::{directory::Directory, meta};
+use lapce_core::directory::Directory;
 use lapce_rpc::{
     dap_types::{ConfigSource, RunDebugConfig},
     file::PathObject,
@@ -725,50 +725,6 @@ impl WindowTabData {
             // ==== UI ====
             ShowAbout => {
                 self.about_data.open();
-            }
-
-            // ==== Updating ====
-            RestartToUpdate => {
-                if let Some(release) = self
-                    .common
-                    .window_common
-                    .latest_release
-                    .get_untracked()
-                    .as_ref()
-                {
-                    let release = release.clone();
-                    let update_in_progress = self.update_in_progress;
-                    if release.version != *meta::VERSION {
-                        if let Ok(process_path) = env::current_exe() {
-                            update_in_progress.set(true);
-                            let send = create_ext_action(
-                                self.common.scope,
-                                move |_started| {
-                                    update_in_progress.set(false);
-                                },
-                            );
-                            std::thread::Builder::new().name("RestartToUpdate".to_owned()).spawn(move || {
-                                let do_update = || -> anyhow::Result<()> {
-                                    let src =
-                                        crate::update::download_release(&release)?;
-
-                                    let path =
-                                        crate::update::extract(&src, &process_path)?;
-
-                                    crate::update::restart(&path)?;
-
-                                    Ok(())
-                                };
-
-                                if let Err(err) = do_update() {
-                                    error!("Failed to update: {err}");
-                                }
-
-                                send(false);
-                            }).unwrap();
-                        }
-                    }
-                }
             }
 
             // ==== Movement ====

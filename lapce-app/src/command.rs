@@ -576,9 +576,6 @@ pub enum LapceWorkbenchCommand {
     #[strum(message = "Toggle Inlay Hints")]
     ToggleInlayHints,
 
-    #[strum(serialize = "restart_to_update")]
-    RestartToUpdate,
-
     #[strum(serialize = "show_about")]
     #[strum(message = "About Lapce")]
     ShowAbout,

@@ -5,13 +5,10 @@ use floem::{
     event::EventListener,
     menu::{Menu, MenuItem},
     peniko::Color,
-    reactive::{
-        Memo, ReadSignal, RwSignal, SignalGet, SignalUpdate, SignalWith, create_memo,
-    },
+    reactive::{Memo, ReadSignal, RwSignal, SignalGet, SignalUpdate, create_memo},
     style::{AlignItems, CursorStyle, JustifyContent},
     views::{Decorators, container, drag_window_area, empty, label, stack, svg},
 };
-use lapce_core::meta;
 use lapce_rpc::proxy::ProxyStatus;
 
 use crate::{
@@ -20,7 +17,6 @@ use crate::{
     config::{LapceConfig, color::LapceColor, icon::LapceIcons},
     listener::Listener,
     main_split::MainSplitData,
-    update::ReleaseInfo,
     window_tab::WindowTabData,
     workspace::LapceWorkspace,
 };
@@ -304,112 +300,47 @@ fn middle(
     .debug_name("Middle of Top Bar")
 }
 
-/// Temporarily hides the "Restart to update" menu entry and the update badge.
-const SHOW_UPDATE_UI: bool = false;
-
 fn right(
     window_command: Listener<WindowCommand>,
     workbench_command: Listener<LapceWorkbenchCommand>,
-    latest_release: ReadSignal<Arc<Option<ReleaseInfo>>>,
-    update_in_progress: RwSignal<bool>,
     num_window_tabs: Memo<usize>,
     window_maximized: RwSignal<bool>,
     config: ReadSignal<Arc<LapceConfig>>,
 ) -> impl View {
-    let latest_version = create_memo(move |_| {
-        if !SHOW_UPDATE_UI {
-            return None;
-        }
-        let latest_release = latest_release.get();
-        let latest_version =
-            latest_release.as_ref().as_ref().map(|r| r.version.clone());
-        if latest_version.is_some()
-            && latest_version.as_deref() != Some(meta::VERSION)
-        {
-            latest_version
-        } else {
-            None
-        }
-    });
-
-    let has_update = move || latest_version.with(|v| v.is_some());
-
     stack((
         drag_window_area(empty())
             .style(|s| s.height_pct(100.0).flex_basis(0.0).flex_grow(1.0f32)),
-        stack((
-            not_clickable_icon(
-                || LapceIcons::SETTINGS,
-                || false,
-                || false,
-                || "Settings",
-                config,
-            )
-            .popout_menu(move || {
-                let menu = Menu::new("")
-                    .entry(MenuItem::new("Command Palette").action(move || {
-                        workbench_command.send(LapceWorkbenchCommand::PaletteCommand)
-                    }))
-                    .separator()
-                    .entry(MenuItem::new("Open Settings").action(move || {
-                        workbench_command.send(LapceWorkbenchCommand::OpenSettings)
-                    }))
-                    .entry(MenuItem::new("Open Keyboard Shortcuts").action(
-                        move || {
-                            workbench_command
-                                .send(LapceWorkbenchCommand::OpenKeyboardShortcuts)
-                        },
-                    ))
-                    .entry(MenuItem::new("Open Theme Color Settings").action(
-                        move || {
-                            workbench_command
-                                .send(LapceWorkbenchCommand::OpenThemeColorSettings)
-                        },
-                    ))
-                    .separator();
-                let menu = if SHOW_UPDATE_UI {
-                    menu.entry(if let Some(v) = latest_version.get_untracked() {
-                        if update_in_progress.get_untracked() {
-                            MenuItem::new(format!("Update in progress ({v})"))
-                                .enabled(false)
-                        } else {
-                            MenuItem::new(format!("Restart to update ({v})")).action(
-                                move || {
-                                    workbench_command
-                                        .send(LapceWorkbenchCommand::RestartToUpdate)
-                                },
-                            )
-                        }
-                    } else {
-                        MenuItem::new("No update available").enabled(false)
-                    })
-                    .separator()
-                } else {
-                    menu
-                };
-                menu.separator().entry(MenuItem::new("About Lapce").action(
-                    move || workbench_command.send(LapceWorkbenchCommand::ShowAbout),
+        stack((not_clickable_icon(
+            || LapceIcons::SETTINGS,
+            || false,
+            || false,
+            || "Settings",
+            config,
+        )
+        .popout_menu(move || {
+            let menu = Menu::new("")
+                .entry(MenuItem::new("Command Palette").action(move || {
+                    workbench_command.send(LapceWorkbenchCommand::PaletteCommand)
+                }))
+                .separator()
+                .entry(MenuItem::new("Open Settings").action(move || {
+                    workbench_command.send(LapceWorkbenchCommand::OpenSettings)
+                }))
+                .entry(MenuItem::new("Open Keyboard Shortcuts").action(move || {
+                    workbench_command
+                        .send(LapceWorkbenchCommand::OpenKeyboardShortcuts)
+                }))
+                .entry(MenuItem::new("Open Theme Color Settings").action(
+                    move || {
+                        workbench_command
+                            .send(LapceWorkbenchCommand::OpenThemeColorSettings)
+                    },
                 ))
-            }),
-            container(label(|| "1".to_string()).style(move |s| {
-                let config = config.get();
-                s.font_size(10.0)
-                    .color(config.color(LapceColor::EDITOR_BACKGROUND))
-                    .border_radius(100.0)
-                    .margin_left(5.0)
-                    .margin_top(10.0)
-                    .background(config.color(LapceColor::EDITOR_CARET))
+                .separator();
+            menu.entry(MenuItem::new("About Lapce").action(move || {
+                workbench_command.send(LapceWorkbenchCommand::ShowAbout)
             }))
-            .style(move |s| {
-                let has_update = has_update();
-                s.absolute()
-                    .size_pct(100.0, 100.0)
-                    .justify_end()
-                    .items_end()
-                    .pointer_events_none()
-                    .apply_if(!has_update, |s| s.hide())
-            }),
-        ))
+        }),))
         .style(move |s| s.margin_horiz(6.0)),
         window_controls_view(
             window_command,
@@ -432,12 +363,10 @@ pub fn title(window_tab_data: Rc<WindowTabData>) -> impl View {
     let lapce_command = window_tab_data.common.lapce_command;
     let workbench_command = window_tab_data.common.workbench_command;
     let window_command = window_tab_data.common.window_common.window_command;
-    let latest_release = window_tab_data.common.window_common.latest_release;
     let proxy_status = window_tab_data.common.proxy_status;
     let num_window_tabs = window_tab_data.common.window_common.num_window_tabs;
     let window_maximized = window_tab_data.common.window_common.window_maximized;
     let title_height = window_tab_data.title_height;
-    let update_in_progress = window_tab_data.update_in_progress;
     let config = window_tab_data.common.config;
     stack((
         left(
@@ -457,8 +386,6 @@ pub fn title(window_tab_data: Rc<WindowTabData>) -> impl View {
         right(
             window_command,
             workbench_command,
-            latest_release,
-            update_in_progress,
             num_window_tabs,
             window_maximized,
             config,

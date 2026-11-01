@@ -32,14 +32,12 @@ use crate::{
     status::status,
     title::{title, window_controls_view},
     tracing::*,
-    update::ReleaseInfo,
     window::{TabsInfo, WindowData, WindowInfo},
     window_tab::WindowTabData,
     workspace::{LapceWorkspace, LapceWorkspaceType},
 };
 
 mod editor_tab;
-mod grammars;
 mod launch;
 mod logging;
 mod menu;
@@ -83,7 +81,6 @@ pub struct AppData {
     pub app_command: Listener<AppCommand>,
     pub app_terminated: RwSignal<bool>,
     /// The latest release information
-    pub latest_release: RwSignal<Arc<Option<ReleaseInfo>>>,
     pub watcher: Arc<notify::RecommendedWatcher>,
     pub tracing_handle: Handle<Targets>,
     pub config: RwSignal<Arc<LapceConfig>>,
@@ -387,7 +384,6 @@ impl AppData {
             app_view_id,
             info,
             self.window_scale,
-            self.latest_release.read_only(),
             self.plugin_paths.clone(),
             self.app_command,
         );

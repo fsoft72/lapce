@@ -3241,7 +3241,6 @@ dependencies = [
  "rayon",
  "regex",
  "reqwest",
- "semver",
  "serde",
  "serde_json",
  "sha2",
@@ -3249,8 +3248,6 @@ dependencies = [
  "structdesc",
  "strum 0.27.2",
  "strum_macros 0.27.2",
- "tar",
- "tempfile",
  "thiserror 1.0.69",
  "toml 0.8.2",
  "toml_edit 0.20.2",
@@ -3261,8 +3258,6 @@ dependencies = [
  "unicode-width",
  "url",
  "windows-sys 0.60.2",
- "zip",
- "zstd",
 ]
 
 [[package]]
@@ -8227,18 +8222,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.94",
-]
-
-[[package]]
-name = "zip"
-version = "0.6.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "760394e246e4c28189f19d488c058bf16f564016aefac5d32bb1f3b51d5e9261"
-dependencies = [
- "byteorder",
- "crc32fast",
- "crossbeam-utils",
- "flate2",
 ]
 
 [[package]]

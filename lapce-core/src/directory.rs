@@ -146,20 +146,6 @@ impl Directory {
         Self::data_local_directory().map(|dir| dir.join("local.sock"))
     }
 
-    pub fn updates_directory() -> Option<PathBuf> {
-        if let Some(dir) = Self::data_local_directory() {
-            let dir = dir.join("updates");
-            if !dir.exists() {
-                if let Err(err) = std::fs::create_dir(&dir) {
-                    tracing::error!("{:?}", err);
-                }
-            }
-            Some(dir)
-        } else {
-            None
-        }
-    }
-
     pub fn queries_directory() -> Option<PathBuf> {
         if let Some(dir) = Self::config_directory() {
             let dir = dir.join("queries");

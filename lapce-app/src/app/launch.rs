@@ -15,17 +15,13 @@ use std::{
 use anyhow::{Context, Result, anyhow};
 use clap::Parser;
 use floem::{
-    ext_event::{create_ext_action, create_signal_from_channel},
+    ext_event::create_signal_from_channel,
     reactive::{
         Scope, SignalGet, SignalUpdate, SignalWith, create_effect, provide_context,
     },
     window::WindowId,
 };
-use lapce_core::{
-    directory::Directory,
-    meta,
-    syntax::{Syntax, highlight::reset_highlight_configs},
-};
+use lapce_core::{directory::Directory, meta};
 use lapce_rpc::{
     RpcMessage,
     core::{CoreMessage, CoreNotification},
@@ -172,9 +168,6 @@ pub fn launch() {
         }
     }
 
-    #[cfg(feature = "updater")]
-    crate::update::cleanup();
-
     if let Err(err) = lapce_proxy::register_lapce_path() {
         tracing::error!("{:?}", err);
     }
@@ -192,7 +185,6 @@ pub fn launch() {
     provide_context(db.clone());
 
     let window_scale = scope.create_rw_signal(1.0);
-    let latest_release = scope.create_rw_signal(Arc::new(None));
     let app_command = Listener::new_empty(scope);
 
     let plugin_paths = Arc::new(cli.plugin_path);
@@ -238,7 +230,6 @@ pub fn launch() {
         window_scale,
         app_terminated: scope.create_rw_signal(false),
         watcher: Arc::new(watcher),
-        latest_release,
         app_command,
         tracing_handle: reload_handle,
         config,
@@ -256,93 +247,6 @@ pub fn launch() {
                 app_data.reload_config();
             }
         });
-    }
-
-    {
-        let cx = Scope::new();
-        let app_data = app_data.clone();
-        let send = create_ext_action(cx, move |updated| {
-            if updated {
-                trace!(
-                    TraceLevel::INFO,
-                    "grammar or query got updated, reset highlight configs"
-                );
-                reset_highlight_configs();
-                for (_, window) in app_data.windows.get_untracked() {
-                    for (_, tab) in window.window_tabs.get_untracked() {
-                        for (_, doc) in tab.main_split.docs.get_untracked() {
-                            doc.syntax.update(|syntax| {
-                                *syntax = Syntax::from_language(syntax.language);
-                            });
-                            doc.trigger_syntax_change(None);
-                        }
-                    }
-                }
-            }
-        });
-        std::thread::Builder::new()
-            .name("FindGrammar".to_owned())
-            .spawn(move || {
-                use super::grammars::*;
-                let updated = match find_grammar_release() {
-                    Ok(release) => {
-                        let mut updated = false;
-                        match fetch_grammars(&release) {
-                            Err(e) => {
-                                trace!(
-                                    TraceLevel::ERROR,
-                                    "failed to fetch grammars: {e}"
-                                );
-                            }
-                            Ok(u) => updated |= u,
-                        }
-                        match fetch_queries(&release) {
-                            Err(e) => {
-                                trace!(
-                                    TraceLevel::ERROR,
-                                    "failed to fetch grammars: {e}"
-                                );
-                            }
-                            Ok(u) => updated |= u,
-                        }
-                        updated
-                    }
-                    Err(e) => {
-                        trace!(
-                            TraceLevel::ERROR,
-                            "failed to obtain release info: {e}"
-                        );
-                        false
-                    }
-                };
-                send(updated);
-            })
-            .unwrap();
-    }
-
-    #[cfg(feature = "updater")]
-    {
-        let (tx, rx) = sync_channel(1);
-        let notification = create_signal_from_channel(rx);
-        let latest_release = app_data.latest_release;
-        create_effect(move |_| {
-            if let Some(release) = notification.get() {
-                latest_release.set(Arc::new(Some(release)));
-            }
-        });
-        std::thread::Builder::new()
-            .name("LapceUpdater".to_owned())
-            .spawn(move || {
-                loop {
-                    if let Ok(release) = crate::update::get_latest_release() {
-                        if let Err(err) = tx.send(release) {
-                            tracing::error!("{:?}", err);
-                        }
-                    }
-                    std::thread::sleep(std::time::Duration::from_secs(60 * 60));
-                }
-            })
-            .unwrap();
     }
 
     {
