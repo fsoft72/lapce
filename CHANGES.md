@@ -93,3 +93,4 @@
 - While a turn runs, the prompt being answered shows a single "Stop" button (cancels the turn) instead of "Edit" and "Rerun"; the two come back when the turn ends. New `AgentState::last_user_index`. (Not verified by hand in the running app.)
 - New "New Chat" button at the right end of the Agent panel header (`PanelBuilder::add_with_action`): it clears the transcript and, if an agent is running, replaces its session with a fresh one, so the agent keeps no memory or context of the old chat. The input draft is kept. New `AgentState::clear_chat` and `AgentData::new_chat`. (Not verified by hand in the running app.)
 - Removed the "Cancel" button from the agent toolbar: the running prompt has its own "Stop" button.
+- New "Clear" button next to "New Chat" in the Agent panel header: it empties the transcript but keeps the agent session, so the agent still remembers the chat. It is refused with a toast while a turn runs.

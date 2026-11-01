@@ -884,6 +884,16 @@ impl AgentData {
         }
     }
 
+    /// Clears the messages of the transcript. Unlike [`AgentData::new_chat`]
+    /// the agent session is kept, so the agent still remembers the chat. Does
+    /// nothing while a turn runs, whose answer would land in an empty chat.
+    pub fn clear_messages(&self) {
+        if self.state.with_untracked(|state| state.busy) {
+            return self.show_toast("Wait for the agent to finish its turn");
+        }
+        self.state.update(|state| state.clear_chat());
+    }
+
     /// Starts a new conversation: the transcript is cleared and, when an
     /// agent is running, its session is replaced by a fresh one so it keeps
     /// no memory or context of the old chat.
