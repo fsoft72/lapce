@@ -121,29 +121,17 @@ jobs:
         include:
           - os: ubuntu-latest
             platform: linux-x86_64
-            # Linux binaries are built inside Ubuntu 25.04 (no hosted runner for it)
-            container: ubuntu:25.04
           - os: windows-latest
             platform: windows-x86_64
           - os: macos-latest
             platform: macos-arm64
     runs-on: ${{ matrix.os }}
-    container: ${{ matrix.container }}
     permissions:
       contents: read
     defaults:
       run:
         shell: bash
     steps:
-      # The bare Ubuntu image has no toolchain: install the tools the job needs
-      - name: Prepare container
-        if: matrix.container
-        run: |
-          apt-get update -y
-          apt-get install -y sudo curl git make build-essential ca-certificates
-          curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Install dependencies on Ubuntu
