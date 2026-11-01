@@ -73,6 +73,45 @@ impl std::fmt::Display for AgentStatus {
     }
 }
 
+/// What a session setting chosen in the chat box controls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentConfigKind {
+    /// The model that answers.
+    Model,
+    /// How much the model thinks (the effort).
+    Effort,
+}
+
+/// One value a session setting can take.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AgentConfigChoice {
+    pub value: String,
+    pub name: String,
+}
+
+/// A session setting the agent lets the user change, with its current value.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AgentConfigOption {
+    /// Identifier sent back when the user picks another value.
+    pub id: String,
+    pub name: String,
+    pub kind: AgentConfigKind,
+    /// The value in use.
+    pub current: String,
+    pub choices: Vec<AgentConfigChoice>,
+}
+
+impl AgentConfigOption {
+    /// The name of the current value, or the raw value when it is not listed.
+    pub fn current_name(&self) -> &str {
+        self.choices
+            .iter()
+            .find(|choice| choice.value == self.current)
+            .map_or(self.current.as_str(), |choice| choice.name.as_str())
+    }
+}
+
 /// Events streamed from the proxy to the UI while an agent session runs.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -100,6 +139,11 @@ pub enum AgentEvent {
     },
     Status {
         status: AgentStatus,
+    },
+    /// The model and effort settings the agent offers, with their values.
+    /// Replaces any earlier list.
+    ConfigOptions {
+        options: Vec<AgentConfigOption>,
     },
     TurnEnded {
         stop_reason: String,
@@ -145,6 +189,36 @@ mod tests {
             title: None,
             status: Some(AgentToolStatus::Completed),
         });
+    }
+
+    #[test]
+    fn config_options_roundtrip_and_name_the_current_value() {
+        let option = AgentConfigOption {
+            id: "model".to_string(),
+            name: "Model".to_string(),
+            kind: AgentConfigKind::Model,
+            current: "opus".to_string(),
+            choices: vec![AgentConfigChoice {
+                value: "opus".to_string(),
+                name: "Opus".to_string(),
+            }],
+        };
+        assert_eq!(option.current_name(), "Opus");
+        roundtrip(AgentEvent::ConfigOptions {
+            options: vec![option],
+        });
+    }
+
+    #[test]
+    fn an_unlisted_current_value_is_shown_as_is() {
+        let option = AgentConfigOption {
+            id: "model".to_string(),
+            name: "Model".to_string(),
+            kind: AgentConfigKind::Model,
+            current: "custom".to_string(),
+            choices: vec![],
+        };
+        assert_eq!(option.current_name(), "custom");
     }
 
     #[test]

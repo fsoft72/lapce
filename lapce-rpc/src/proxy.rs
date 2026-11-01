@@ -372,6 +372,11 @@ pub enum ProxyNotification {
         contexts: Vec<AgentContext>,
     },
     AgentCancel {},
+    /// Changes a session setting (model, effort) to one of its values.
+    AgentSetConfig {
+        config_id: String,
+        value: String,
+    },
     AgentPermissionReply {
         request_id: AgentRequestId,
         option_id: Option<String>,
@@ -640,6 +645,11 @@ impl ProxyRpcHandler {
     /// Sends a user prompt with editor context to the agent.
     pub fn agent_prompt(&self, text: String, contexts: Vec<AgentContext>) {
         self.notification(ProxyNotification::AgentPrompt { text, contexts });
+    }
+
+    /// Changes the agent session setting `config_id` to `value`.
+    pub fn agent_set_config(&self, config_id: String, value: String) {
+        self.notification(ProxyNotification::AgentSetConfig { config_id, value });
     }
 
     /// Cancels the running agent turn.

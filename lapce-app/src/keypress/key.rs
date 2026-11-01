@@ -128,6 +128,8 @@ impl KeyInput {
             return None;
         }
 
-        Some(KeyMapKey::Logical(Key::Character(actual.to_lowercase().into())))
+        Some(KeyMapKey::Logical(Key::Character(
+            actual.to_lowercase().into(),
+        )))
     }
 }

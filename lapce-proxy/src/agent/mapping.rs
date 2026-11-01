@@ -1,11 +1,14 @@
 //! Converts ACP session data into the events the UI understands.
 
 use agent_client_protocol::schema::v1::{
-    ContentBlock, PermissionOptionKind, RequestPermissionRequest, SessionUpdate,
-    ToolCall, ToolCallStatus, ToolCallUpdate,
+    ContentBlock, PermissionOptionKind, RequestPermissionRequest, SessionConfigKind,
+    SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption,
+    SessionConfigSelectOptions, SessionUpdate, ToolCall, ToolCallStatus,
+    ToolCallUpdate,
 };
 use lapce_rpc::agent::{
-    AgentEvent, AgentPermissionKind, AgentPermissionOption, AgentToolStatus,
+    AgentConfigChoice, AgentConfigKind, AgentConfigOption, AgentEvent,
+    AgentPermissionKind, AgentPermissionOption, AgentToolStatus,
 };
 
 /// Title shown when the agent does not name the action it asks permission for.
@@ -57,8 +60,61 @@ pub fn map_update(update: SessionUpdate) -> Option<AgentEvent> {
             title: fields.title,
             status: fields.status.map(map_status),
         }),
+        SessionUpdate::ConfigOptionUpdate(update) => {
+            Some(AgentEvent::ConfigOptions {
+                options: map_config_options(&update.config_options),
+            })
+        }
         _ => None,
     }
+}
+
+/// Maps a select value to a choice.
+fn map_choice(option: &SessionConfigSelectOption) -> AgentConfigChoice {
+    AgentConfigChoice {
+        value: option.value.to_string(),
+        name: option.name.clone(),
+    }
+}
+
+/// Keeps the settings the chat box can show: the model and the effort
+/// (thought level) selectors. Other settings and toggles are left out, and
+/// grouped choices are flattened.
+pub fn map_config_options(
+    options: &[SessionConfigOption],
+) -> Vec<AgentConfigOption> {
+    options
+        .iter()
+        .filter_map(|option| {
+            let kind = match option.category {
+                Some(SessionConfigOptionCategory::Model) => AgentConfigKind::Model,
+                Some(SessionConfigOptionCategory::ThoughtLevel) => {
+                    AgentConfigKind::Effort
+                }
+                _ => return None,
+            };
+            let SessionConfigKind::Select(select) = &option.kind else {
+                return None;
+            };
+            let choices = match &select.options {
+                SessionConfigSelectOptions::Ungrouped(options) => {
+                    options.iter().map(map_choice).collect()
+                }
+                SessionConfigSelectOptions::Grouped(groups) => groups
+                    .iter()
+                    .flat_map(|group| group.options.iter().map(map_choice))
+                    .collect(),
+                _ => return None,
+            };
+            Some(AgentConfigOption {
+                id: option.id.to_string(),
+                name: option.name.clone(),
+                kind,
+                current: select.current_value.to_string(),
+                choices,
+            })
+        })
+        .collect()
 }
 
 /// Maps an ACP permission option kind. Unknown kinds count as reject-always (the safe side).
@@ -146,6 +202,33 @@ mod tests {
             ContentBlock::Text(TextContent::new("echo of the prompt")),
         ));
         assert_eq!(map_update(update), None);
+    }
+
+    #[test]
+    fn keeps_only_the_model_and_effort_selectors() {
+        let choices = vec![
+            SessionConfigSelectOption::new("a", "Alpha"),
+            SessionConfigSelectOption::new("b", "Beta"),
+        ];
+        let mut model =
+            SessionConfigOption::select("model", "Model", "a", choices.clone());
+        model.category = Some(SessionConfigOptionCategory::Model);
+        let mut effort =
+            SessionConfigOption::select("effort", "Effort", "b", choices.clone());
+        effort.category = Some(SessionConfigOptionCategory::ThoughtLevel);
+        let mut mode = SessionConfigOption::select("mode", "Mode", "a", choices);
+        mode.category = Some(SessionConfigOptionCategory::Mode);
+        let mut toggle = SessionConfigOption::boolean("flag", "Flag", true);
+        toggle.category = Some(SessionConfigOptionCategory::Model);
+
+        let mapped = map_config_options(&[model, effort, mode, toggle]);
+        assert_eq!(mapped.len(), 2);
+        assert_eq!(mapped[0].id, "model");
+        assert_eq!(mapped[0].kind, AgentConfigKind::Model);
+        assert_eq!(mapped[0].current_name(), "Alpha");
+        assert_eq!(mapped[1].kind, AgentConfigKind::Effort);
+        assert_eq!(mapped[1].current_name(), "Beta");
+        assert_eq!(mapped[1].choices.len(), 2);
     }
 
     #[test]

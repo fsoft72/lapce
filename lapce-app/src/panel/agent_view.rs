@@ -12,12 +12,14 @@ use std::{
 
 use floem::{
     IntoView, View,
+    action::show_context_menu,
     event::{Event, EventListener, EventPropagation},
     keyboard::{KeyCode, PhysicalKey},
+    menu::{Menu, MenuItem},
     peniko::kurbo::Rect,
     prelude::SignalTrack,
     reactive::{
-        ReadSignal, SignalGet, SignalUpdate, SignalWith, create_memo,
+        Memo, ReadSignal, SignalGet, SignalUpdate, SignalWith, create_memo,
         create_rw_signal,
     },
     style::CursorStyle,
@@ -33,7 +35,7 @@ use floem::{
     },
 };
 use lapce_core::{buffer::rope_text::RopeText, register::Clipboard};
-use lapce_rpc::agent::AgentToolStatus;
+use lapce_rpc::agent::{AgentConfigOption, AgentToolStatus};
 
 use super::{
     data::PanelSection, kind::PanelKind, position::PanelPosition, view::PanelBuilder,
@@ -92,6 +94,9 @@ const ITEM_SPACING: f32 = 4.0;
 
 /// Vertical padding of a user prompt, inside its tinted box.
 const USER_PROMPT_PADDING_VERT: f32 = 6.0;
+
+/// Height reserved below the prompt box for the model and effort row.
+const CONFIG_ROW_HEIGHT: f32 = 30.0;
 
 /// Space above and below a Markdown horizontal rule.
 const SEPARATOR_MARGIN: f32 = 5.0;
@@ -461,6 +466,65 @@ fn mention_list(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl Vi
     })
 }
 
+/// A button showing the current value of `option`. Clicking it opens a menu
+/// with the other values. It is hidden when the agent does not offer the
+/// setting, and does nothing while a turn runs.
+fn config_selector(
+    window_tab_data: Rc<WindowTabData>,
+    agent: AgentData,
+    option: Memo<Option<AgentConfigOption>>,
+) -> impl View {
+    let config = window_tab_data.common.config;
+    let busy = agent.memos.busy;
+    let text = move || {
+        option.with(|option| {
+            option.as_ref().map_or(String::new(), |option| {
+                format!("{}: {}", option.name, option.current_name())
+            })
+        })
+    };
+    let open_menu = move || {
+        let Some(option) = option.get_untracked() else {
+            return;
+        };
+        if busy.get_untracked() {
+            return agent.show_toast("Wait for the agent to finish its turn");
+        }
+        let mut menu = Menu::new("");
+        for choice in &option.choices {
+            let marker = if choice.value == option.current {
+                "* "
+            } else {
+                "  "
+            };
+            let (agent, id, value) =
+                (agent.clone(), option.id.clone(), choice.value.clone());
+            menu = menu.entry(
+                MenuItem::new(format!("{marker}{}", choice.name))
+                    .action(move || agent.set_config(&id, &value)),
+            );
+        }
+        show_context_menu(menu, None);
+    };
+    pressable(label(text), open_menu).style(move |s| {
+        let config = config.get();
+        s.padding_horiz(BUTTON_PADDING.0)
+            .padding_vert(BUTTON_PADDING.1)
+            .margin_right(BUTTON_GAP)
+            .border(1.0)
+            .border_radius(BUTTON_RADIUS)
+            .border_color(config.color(LapceColor::LAPCE_BORDER))
+            .cursor(CursorStyle::Pointer)
+            .apply_if(option.with(|option| option.is_none()), |s| s.hide())
+            .apply_if(busy.get(), |s| {
+                s.color(config.color(LapceColor::EDITOR_DIM))
+            })
+            .focus_visible(|s| {
+                s.border_color(config.color(LapceColor::EDITOR_FOCUS))
+            })
+    })
+}
+
 /// The multi-line prompt box (Enter sends, Shift+Enter adds a line) and the Send button.
 fn input_box(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View {
     let config = window_tab_data.common.config;
@@ -585,12 +649,22 @@ fn input_box(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View 
             .background(config.color(LapceColor::EDITOR_BACKGROUND))
     });
 
+    let selectors = stack((
+        config_selector(window_tab_data.clone(), agent.clone(), agent.memos.model),
+        config_selector(window_tab_data.clone(), agent.clone(), agent.memos.effort),
+    ))
+    .style(|s| s.items_center().height(CONFIG_ROW_HEIGHT));
+
     stack((
-        text_area,
-        send_button(window_tab_data, move || agent.send_input()),
+        stack((
+            text_area,
+            send_button(window_tab_data, move || agent.send_input()),
+        ))
+        .style(|s| s.items_stretch().width_pct(100.0)),
+        selectors,
     ))
     .style(move |s| {
-        s.items_stretch()
+        s.flex_col()
             .width_pct(100.0)
             .padding(PANEL_PADDING)
             .border_top(1.0)
@@ -647,7 +721,9 @@ fn agent_body(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View
         label(move || toast.get().unwrap_or_default()).style(move |s| {
             let config = config.get();
             s.absolute()
-                .inset_bottom(INPUT_HEIGHT + TOAST_GAP_ABOVE_INPUT)
+                .inset_bottom(
+                    INPUT_HEIGHT + CONFIG_ROW_HEIGHT + TOAST_GAP_ABOVE_INPUT,
+                )
                 .inset_left(TOAST_INSET_LEFT)
                 .padding_horiz(TOAST_PADDING.0)
                 .padding_vert(TOAST_PADDING.1)

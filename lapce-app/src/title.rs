@@ -383,15 +383,13 @@ fn right(
                     } else {
                         MenuItem::new("No update available").enabled(false)
                     })
-                        .separator()
+                    .separator()
                 } else {
                     menu
                 };
-                menu                    .separator()
-                    .entry(MenuItem::new("About Lapce").action(move || {
-                        workbench_command.send(LapceWorkbenchCommand::ShowAbout)
-                    }))
-
+                menu.separator().entry(MenuItem::new("About Lapce").action(
+                    move || workbench_command.send(LapceWorkbenchCommand::ShowAbout),
+                ))
             }),
             container(label(|| "1".to_string()).style(move |s| {
                 let config = config.get();

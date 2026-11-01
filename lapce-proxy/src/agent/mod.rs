@@ -153,6 +153,23 @@ impl AgentManager {
         }
     }
 
+    /// Changes a session setting (model, effort) of the running session.
+    pub fn set_config(&self, config_id: String, value: String) {
+        let Some(tx) = &self.cmd_tx else {
+            return self.emit(AgentEvent::Error {
+                message: "The agent is not running".to_string(),
+            });
+        };
+        if tx
+            .unbounded_send(SessionCommand::SetConfig { config_id, value })
+            .is_err()
+        {
+            self.emit(AgentEvent::Error {
+                message: "The agent is not running".to_string(),
+            });
+        }
+    }
+
     /// Cancels the running turn.
     pub fn cancel(&self) {
         let Some(tx) = &self.cmd_tx else { return };

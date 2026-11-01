@@ -197,6 +197,28 @@ fn allowed_permission_lets_the_agent_write_and_finish() {
 }
 
 #[test]
+fn the_agent_settings_are_shown_and_can_be_changed() {
+    let mut rig = Rig::new();
+    rig.manager
+        .start(mock_config(), Some(PathBuf::from("/mock")));
+    let first = rig.wait_for(|event| match event {
+        AgentEvent::ConfigOptions { options } => Some(options.clone()),
+        _ => None,
+    });
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0].current, "fast");
+
+    rig.manager
+        .set_config("model".to_string(), "smart".to_string());
+    let changed = rig.wait_for(|event| match event {
+        AgentEvent::ConfigOptions { options } => Some(options.clone()),
+        _ => None,
+    });
+    assert_eq!(changed[0].current, "smart");
+    assert_eq!(changed[0].current_name(), "Smart");
+}
+
+#[test]
 fn rejected_permission_prevents_the_write() {
     let mut rig = Rig::new();
     rig.manager

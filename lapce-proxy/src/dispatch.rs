@@ -180,6 +180,9 @@ impl ProxyHandler for Dispatcher {
             AgentCancel {} => {
                 self.agent.cancel();
             }
+            AgentSetConfig { config_id, value } => {
+                self.agent.set_config(config_id, value);
+            }
             AgentPermissionReply {
                 request_id,
                 option_id,

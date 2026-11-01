@@ -641,17 +641,15 @@ fn panel_picker(
                         )
                 }),
                 container(
-                    label(move || {
-                        file_diffs.with(|diffs| diffs.len().to_string())
-                    })
-                    .style(move |s| {
-                        let config = config.get();
-                        s.font_size(9.0)
-                            .padding_horiz(3.0)
-                            .color(config.color(LapceColor::EDITOR_BACKGROUND))
-                            .border_radius(100.0)
-                            .background(config.color(LapceColor::EDITOR_CARET))
-                    }),
+                    label(move || file_diffs.with(|diffs| diffs.len().to_string()))
+                        .style(move |s| {
+                            let config = config.get();
+                            s.font_size(9.0)
+                                .padding_horiz(3.0)
+                                .color(config.color(LapceColor::EDITOR_BACKGROUND))
+                                .border_radius(100.0)
+                                .background(config.color(LapceColor::EDITOR_CARET))
+                        }),
                 )
                 .style(move |s| {
                     let show = p == PanelKind::SourceControl

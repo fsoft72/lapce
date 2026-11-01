@@ -549,7 +549,11 @@ impl KeyPressData {
         } else if matches.len() == 1 && matches[0].key.as_slice() == keypresses {
             KeymapMatch::Full(matches[0].command.clone())
         } else if matches.len() > 1
-            && matches.iter().filter(|m| m.key.as_slice() != keypresses).count() == 0
+            && matches
+                .iter()
+                .filter(|m| m.key.as_slice() != keypresses)
+                .count()
+                == 0
         {
             KeymapMatch::Multiple(
                 matches.iter().rev().map(|m| m.command.clone()).collect(),

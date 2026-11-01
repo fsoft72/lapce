@@ -16,8 +16,8 @@ use lapce_core::{
     selection::Selection,
 };
 use lapce_rpc::agent::{
-    AgentContext, AgentEvent, AgentPermissionOption, AgentRequestId, AgentStatus,
-    AgentToolStatus,
+    AgentConfigKind, AgentConfigOption, AgentContext, AgentEvent,
+    AgentPermissionOption, AgentRequestId, AgentStatus, AgentToolStatus,
 };
 
 use lapce_rpc::proxy::{ProxyResponse, ProxyRpcHandler};
@@ -117,6 +117,8 @@ pub struct AgentState {
     /// Permission requests waiting for a decision, oldest first. Only the
     /// first one is shown; answering it reveals the next.
     pub pending: VecDeque<PendingPermission>,
+    /// The model and effort settings the agent offers, empty until it says so.
+    pub config_options: Vec<AgentConfigOption>,
 }
 
 impl Default for AgentState {
@@ -130,6 +132,7 @@ impl Default for AgentState {
             },
             busy: false,
             pending: VecDeque::new(),
+            config_options: Vec::new(),
         }
     }
 }
@@ -186,6 +189,16 @@ impl AgentState {
     /// Removes and returns the permission request currently shown, if any.
     pub fn take_pending(&mut self) -> Option<PendingPermission> {
         self.pending.pop_front()
+    }
+
+    /// The setting of the given kind, if the agent offers one.
+    pub fn config_option(
+        &self,
+        kind: AgentConfigKind,
+    ) -> Option<&AgentConfigOption> {
+        self.config_options
+            .iter()
+            .find(|option| option.kind == kind)
     }
 
     /// The permission request currently shown, if any.
@@ -301,8 +314,15 @@ impl AgentState {
                     options: options.clone(),
                 });
             }
+            AgentEvent::ConfigOptions { options } => {
+                self.config_options = options.clone();
+            }
             AgentEvent::Status { status } => {
                 self.status = status.clone();
+                // A new session offers its own settings.
+                if matches!(status, AgentStatus::Starting) {
+                    self.config_options.clear();
+                }
                 if let AgentStatus::Disconnected { reason } = status {
                     self.reset_turn();
                     self.push_item(AgentItem::Error(format!(
@@ -369,6 +389,10 @@ pub struct AgentStateMemos {
     pub permission: Memo<Option<PendingPermission>>,
     /// Number of transcript entries, which only changes when one is added.
     pub item_count: Memo<usize>,
+    /// The model setting, if the agent offers one.
+    pub model: Memo<Option<AgentConfigOption>>,
+    /// The effort setting, if the agent offers one.
+    pub effort: Memo<Option<AgentConfigOption>>,
 }
 
 impl AgentStateMemos {
@@ -381,6 +405,12 @@ impl AgentStateMemos {
                 state.with(|s| s.current_permission().cloned())
             }),
             item_count: cx.create_memo(move |_| state.with(|s| s.items.len())),
+            model: cx.create_memo(move |_| {
+                state.with(|s| s.config_option(AgentConfigKind::Model).cloned())
+            }),
+            effort: cx.create_memo(move |_| {
+                state.with(|s| s.config_option(AgentConfigKind::Effort).cloned())
+            }),
         }
     }
 }
@@ -551,6 +581,14 @@ impl AgentData {
         };
         self.files
             .with_untracked(|files| mention_contexts(root, files, text, contexts))
+    }
+
+    /// Asks the agent to change the setting `config_id` to `value`. The
+    /// panel shows the new value when the agent confirms it.
+    pub fn set_config(&self, config_id: &str, value: &str) {
+        self.common
+            .proxy
+            .agent_set_config(config_id.to_string(), value.to_string());
     }
 
     /// Applies an event coming from the proxy.
@@ -1230,5 +1268,34 @@ mod tests {
             &state.items[1],
             AgentItem::Note(text) if text.contains("/ws/src/main.rs")
         ));
+    }
+
+    /// Builds a setting of `kind` with one value.
+    fn option(kind: AgentConfigKind) -> AgentConfigOption {
+        AgentConfigOption {
+            id: "id".to_string(),
+            name: "Name".to_string(),
+            kind,
+            current: "a".to_string(),
+            choices: vec![],
+        }
+    }
+
+    #[test]
+    fn settings_are_kept_until_a_new_session_starts() {
+        let mut state = AgentState::default();
+        state.apply(&AgentEvent::ConfigOptions {
+            options: vec![option(AgentConfigKind::Model)],
+        });
+        assert!(state.config_option(AgentConfigKind::Model).is_some());
+        assert!(state.config_option(AgentConfigKind::Effort).is_none());
+        state.apply(&AgentEvent::Status {
+            status: AgentStatus::Ready,
+        });
+        assert!(state.config_option(AgentConfigKind::Model).is_some());
+        state.apply(&AgentEvent::Status {
+            status: AgentStatus::Starting,
+        });
+        assert!(state.config_option(AgentConfigKind::Model).is_none());
     }
 }

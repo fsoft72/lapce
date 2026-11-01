@@ -12,8 +12,9 @@ use agent_client_protocol::{
             PromptRequest, ReadTextFileRequest, ReadTextFileResponse,
             RequestPermissionOutcome, RequestPermissionRequest,
             RequestPermissionResponse, SelectedPermissionOutcome,
-            SessionNotification, StopReason, TextContent, WriteTextFileRequest,
-            WriteTextFileResponse,
+            SessionConfigOptionValue, SessionNotification,
+            SetSessionConfigOptionRequest, StopReason, TextContent,
+            WriteTextFileRequest, WriteTextFileResponse,
         },
     },
 };
@@ -34,7 +35,9 @@ use lapce_rpc::{
 use parking_lot::Mutex;
 
 use super::{
-    mapping::{map_permission_options, map_update, permission_title},
+    mapping::{
+        map_config_options, map_permission_options, map_update, permission_title,
+    },
     paths::{resolve_workspace_path, slice_lines},
     permission::PermissionBroker,
     process::AgentProcess,
@@ -51,6 +54,10 @@ const STDERR_GRACE: Duration = Duration::from_millis(500);
 /// Stop reason reported when a prompt queued during the handshake is cancelled.
 const CANCELLED_STOP_REASON: &str = "Cancelled";
 
+/// Reported when a setting change arrives while a turn runs or the agent starts.
+const SETTING_REJECTED: &str =
+    "Wait for the agent to be idle before changing the model or effort";
+
 /// Commands the manager sends to a running session.
 pub enum SessionCommand {
     /// Runs one turn with the user text and the editor context.
@@ -60,6 +67,8 @@ pub enum SessionCommand {
     },
     /// Cancels the running turn and any pending permission request.
     Cancel,
+    /// Changes a session setting (model, effort). Only applied between turns.
+    SetConfig { config_id: String, value: String },
 }
 
 /// Everything a session needs from the proxy.
@@ -410,7 +419,7 @@ async fn connect(
                         .block_task()
                         .await?;
                     tracing::info!("session created: {:?}", session.session_id);
-                    Ok::<_, AcpError>(session.session_id)
+                    Ok::<_, AcpError>((session.session_id, session.config_options))
                 }
                 .fuse();
                 futures::pin_mut!(handshake);
@@ -418,12 +427,17 @@ async fn connect(
                 // interrupt an agent that never answers. There is deliberately
                 // no timeout: a first `npx` download can be legitimately slow.
                 let mut queued = VecDeque::new();
-                let session_id = loop {
+                let (session_id, config_options) = loop {
                     select! {
                         res = handshake => break res?,
                         cmd = cmds.next() => match cmd {
                             Some(prompt @ SessionCommand::Prompt { .. }) => {
                                 queued.push_back(prompt);
+                            }
+                            Some(SessionCommand::SetConfig { .. }) => {
+                                env.emit(AgentEvent::Error {
+                                    message: SETTING_REJECTED.to_string(),
+                                });
                             }
                             Some(SessionCommand::Cancel) => {
                                 // The UI marked itself busy when it sent the
@@ -443,6 +457,11 @@ async fn connect(
                 env.emit(AgentEvent::Status {
                     status: AgentStatus::Ready,
                 });
+                if let Some(options) = config_options {
+                    env.emit(AgentEvent::ConfigOptions {
+                        options: map_config_options(&options),
+                    });
+                }
 
                 loop {
                     let cmd = match queued.pop_front() {
@@ -452,8 +471,33 @@ async fn connect(
                             None => break,
                         },
                     };
-                    let SessionCommand::Prompt { text, contexts } = cmd else {
-                        continue;
+                    let (text, contexts) = match cmd {
+                        SessionCommand::Prompt { text, contexts } => (text, contexts),
+                        SessionCommand::SetConfig { config_id, value } => {
+                            let request = SetSessionConfigOptionRequest::new(
+                                session_id.clone(),
+                                config_id,
+                                SessionConfigOptionValue::value_id(value),
+                            );
+                            match connection.send_request(request).block_task().await
+                            {
+                                Ok(response) => {
+                                    env.emit(AgentEvent::ConfigOptions {
+                                        options: map_config_options(
+                                            &response.config_options,
+                                        ),
+                                    });
+                                }
+                                Err(err) => {
+                                    tracing::error!("agent setting failed: {err}");
+                                    env.emit(AgentEvent::Error {
+                                        message: format!("Setting failed: {err}"),
+                                    });
+                                }
+                            }
+                            continue;
+                        }
+                        SessionCommand::Cancel => continue,
                     };
                     let contexts = env.resolve_contexts(contexts);
                     let prompt = build_prompt_text(&text, &contexts);
@@ -480,6 +524,11 @@ async fn connect(
                                     connection.send_notification(
                                         CancelNotification::new(session_id.clone()),
                                     )?;
+                                }
+                                Some(SessionCommand::SetConfig { .. }) => {
+                                    env.emit(AgentEvent::Error {
+                                        message: SETTING_REJECTED.to_string(),
+                                    });
                                 }
                                 Some(SessionCommand::Prompt { .. }) => {}
                                 None => return Ok(()),
