@@ -119,7 +119,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             platform: linux-x86_64
           - os: windows-latest
             platform: windows-x86_64
