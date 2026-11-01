@@ -2383,7 +2383,7 @@ dependencies = [
 
 [[package]]
 name = "goldenide"
-version = "0.4.6"
+version = "0.5.0"
 dependencies = [
  "goldenide-app",
  "goldenide-proxy",
@@ -2391,7 +2391,7 @@ dependencies = [
 
 [[package]]
 name = "goldenide-app"
-version = "0.4.6"
+version = "0.5.0"
 dependencies = [
  "Inflector",
  "alacritty_terminal",
@@ -2448,7 +2448,7 @@ dependencies = [
 
 [[package]]
 name = "goldenide-core"
-version = "0.4.6"
+version = "0.5.0"
 dependencies = [
  "ahash",
  "anyhow",
@@ -2476,7 +2476,7 @@ dependencies = [
 
 [[package]]
 name = "goldenide-proxy"
-version = "0.4.6"
+version = "0.5.0"
 dependencies = [
  "agent-client-protocol",
  "alacritty_terminal",
@@ -2523,7 +2523,7 @@ dependencies = [
 
 [[package]]
 name = "goldenide-rpc"
-version = "0.4.6"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "crossbeam-channel",

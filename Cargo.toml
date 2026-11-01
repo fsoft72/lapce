@@ -23,7 +23,7 @@ path = "goldenide-proxy/src/bin/goldenide-proxy.rs"
 members = ["goldenide-app", "goldenide-proxy", "goldenide-rpc", "goldenide-core"]
 
 [workspace.package]
-version      = "0.4.6"
+version      = "0.5.0"
 edition      = "2024"
 rust-version = "1.98.0"
 license      = "Apache-2.0"

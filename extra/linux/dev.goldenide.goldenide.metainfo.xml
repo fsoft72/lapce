@@ -32,6 +32,7 @@
         </screenshot>
     </screenshots>
     <releases>
+        <release version="0.5.0" date="2026-11-01" />
         <release version="0.4.6" date="2026-01-21">
             <url type="details">https://github.com/lapce/lapce/releases/tag/v0.4.6</url>
             <issues>
