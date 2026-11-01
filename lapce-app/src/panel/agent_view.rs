@@ -52,6 +52,10 @@ use crate::{
     window_tab::{Focus, WindowTabData},
 };
 
+/// How far from the end of the transcript still counts as "at the end", so
+/// the transcript keeps following the new content.
+const FOLLOW_END_MARGIN: f64 = 20.0;
+
 /// Space between the text of a message and its buttons.
 const BUTTONS_MARGIN_TOP: f32 = 10.0;
 
@@ -187,6 +191,26 @@ pub fn agent_panel(
         )
         .build()
         .debug_name("Agent Panel")
+}
+
+/// Whether the transcript keeps following new content after the viewport
+/// moved from `previous_top` to `top..bottom` over `content_height` of
+/// content. Reaching the end turns it on; scrolling up turns it off; any
+/// other move (the content grew under the viewport) keeps it as it was.
+fn follow_after_scroll(
+    following: bool,
+    previous_top: f64,
+    top: f64,
+    bottom: f64,
+    content_height: f64,
+) -> bool {
+    if bottom >= content_height - FOLLOW_END_MARGIN {
+        return true;
+    }
+    if top < previous_top - 0.5 {
+        return false;
+    }
+    following
 }
 
 /// The text of the activity row for animation step `step`: "Working" followed
@@ -1124,6 +1148,21 @@ fn agent_body(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View
     ))
     .style(|s| s.padding(PANEL_PADDING).items_center());
 
+    // The transcript follows the new content unless the user scrolled up.
+    let follow = create_rw_signal(true);
+    let scroll_to_end = create_rw_signal(0u64);
+    let content_height = create_rw_signal(0.0f64);
+    let last_top = create_rw_signal(0.0f64);
+    // A new prompt brings the transcript back to the end.
+    create_effect({
+        let busy = agent.memos.busy;
+        move |_| {
+            if busy.get() {
+                follow.set(true);
+                scroll_to_end.update(|ticks| *ticks += 1);
+            }
+        }
+    });
     let transcript = scroll(
         dyn_stack(
             {
@@ -1136,8 +1175,29 @@ fn agent_body(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View
                 move |index| item_view(window_tab_data.clone(), index)
             },
         )
+        .on_resize(move |rect| {
+            content_height.set(rect.height());
+            if follow.get_untracked() {
+                scroll_to_end.update(|ticks| *ticks += 1);
+            }
+        })
         .style(|s| s.flex_col().width_pct(100.0)),
     )
+    .on_scroll(move |rect| {
+        let previous_top = last_top.get_untracked();
+        last_top.set(rect.y0);
+        follow.set(follow_after_scroll(
+            follow.get_untracked(),
+            previous_top,
+            rect.y0,
+            rect.y1,
+            content_height.get_untracked(),
+        ));
+    })
+    .scroll_to_percent(move || {
+        scroll_to_end.track();
+        100.0
+    })
     .style(|s| {
         s.flex_grow(1.0f32)
             .flex_basis(0.0)
@@ -1192,7 +1252,7 @@ mod tests {
 
     use std::path::Path;
 
-    use super::{change_row, is_activation_key, working_text};
+    use super::{change_row, follow_after_scroll, is_activation_key, working_text};
 
     #[test]
     fn a_change_row_splits_the_name_from_the_relative_folder() {
@@ -1204,6 +1264,19 @@ mod tests {
         assert_eq!(root_file.folder, "");
         let outside = change_row(Path::new("/other/c.rs"), Some(root), None);
         assert_eq!(outside.folder, "/other");
+    }
+
+    #[test]
+    fn the_transcript_follows_until_the_user_scrolls_up() {
+        // At the end: follows.
+        assert!(follow_after_scroll(false, 0.0, 500.0, 900.0, 900.0));
+        // Scrolled up from the end: stops following.
+        assert!(!follow_after_scroll(true, 500.0, 300.0, 700.0, 900.0));
+        // The content grew under a viewport that did not move: unchanged.
+        assert!(follow_after_scroll(true, 500.0, 500.0, 900.0, 1200.0));
+        assert!(!follow_after_scroll(false, 300.0, 300.0, 700.0, 1200.0));
+        // Scrolling back down to the end follows again.
+        assert!(follow_after_scroll(false, 300.0, 800.0, 1190.0, 1200.0));
     }
 
     #[test]
