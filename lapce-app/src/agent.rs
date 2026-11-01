@@ -24,12 +24,12 @@ use lapce_rpc::proxy::{ProxyResponse, ProxyRpcHandler};
 
 use crate::{
     agent_mention::{
-        MAX_MENTION_FILES, MAX_MENTION_ITEMS, Mention, filter_files, mention_at_end,
-        mention_contexts, mention_files,
+        filter_files, mention_at_end, mention_contexts, mention_files, Mention,
+        MAX_MENTION_FILES, MAX_MENTION_ITEMS,
     },
     command::{CommandExecuted, CommandKind, LapceCommand},
     editor::EditorData,
-    keypress::{KeyPressFocus, condition::Condition},
+    keypress::{condition::Condition, KeyPressFocus},
     main_split::MainSplitData,
     panel::kind::PanelKind,
     window_tab::{CommonData, Focus},
@@ -75,6 +75,15 @@ pub fn scroll_top(top: usize, selected: usize, len: usize) -> usize {
     };
     top.min(len.saturating_sub(PICKER_VISIBLE_ITEMS))
 }
+
+/// Stop reason (the `Debug` form of the ACP one) of a turn that finished normally.
+const END_TURN_STOP_REASON: &str = "EndTurn";
+
+/// Shown when a turn ends normally without any answer. Some agents, such as
+/// `pi-acp`, hide a model error (expired login, missing API key) this way.
+const EMPTY_TURN_MESSAGE: &str = "The agent ended the turn without any response. \
+     Check the credentials and the selected model of the agent (for pi, run it \
+     in a terminal to see the error).";
 
 /// One entry in the chat transcript.
 #[derive(Debug, Clone, PartialEq)]
@@ -256,6 +265,18 @@ impl AgentState {
         )));
     }
 
+    /// True when the agent answered the last prompt with text or a tool call.
+    /// Thoughts alone do not count: the user sees no answer.
+    fn turn_produced_output(&self) -> bool {
+        self.items
+            .iter()
+            .rev()
+            .take_while(|item| !matches!(item, AgentItem::User { .. }))
+            .any(|item| {
+                matches!(item, AgentItem::Assistant(_) | AgentItem::Tool { .. })
+            })
+    }
+
     /// Forgets the running turn: the agent is no longer busy and every
     /// pending permission request is dropped. Used when the turn ends and
     /// when the session is replaced, whose events will never arrive.
@@ -365,7 +386,14 @@ impl AgentState {
                     )));
                 }
             }
-            AgentEvent::TurnEnded { .. } => self.reset_turn(),
+            AgentEvent::TurnEnded { stop_reason } => {
+                let empty = stop_reason == END_TURN_STOP_REASON
+                    && !self.turn_produced_output();
+                self.reset_turn();
+                if empty {
+                    self.push_item(AgentItem::Error(EMPTY_TURN_MESSAGE.to_string()));
+                }
+            }
             AgentEvent::Error { message } => {
                 self.busy = false;
                 self.push_item(AgentItem::Error(message.clone()));
@@ -1202,6 +1230,42 @@ mod tests {
         assert_eq!(state.current_permission().unwrap().request_id, 2);
         assert_eq!(state.take_pending().unwrap().request_id, 2);
         assert!(state.take_pending().is_none());
+    }
+
+    #[test]
+    fn an_empty_end_turn_tells_the_user() {
+        let mut state = AgentState::default();
+        state.push_user("hi", Vec::new());
+        state.apply(&AgentEvent::TurnEnded {
+            stop_reason: "EndTurn".into(),
+        });
+        assert!(!state.busy);
+        assert_eq!(
+            state.items.back(),
+            Some(&AgentItem::Error(EMPTY_TURN_MESSAGE.to_string()))
+        );
+    }
+
+    #[test]
+    fn an_answered_or_cancelled_turn_adds_no_message() {
+        let mut state = AgentState::default();
+        state.push_user("hi", Vec::new());
+        state.apply(&AgentEvent::MessageChunk {
+            text: "hello".into(),
+        });
+        state.apply(&AgentEvent::TurnEnded {
+            stop_reason: "EndTurn".into(),
+        });
+        assert_eq!(
+            state.items.back(),
+            Some(&AgentItem::Assistant("hello".into()))
+        );
+
+        state.push_user("again", Vec::new());
+        state.apply(&AgentEvent::TurnEnded {
+            stop_reason: "Cancelled".into(),
+        });
+        assert!(matches!(state.items.back(), Some(AgentItem::User { .. })));
     }
 
     #[test]
