@@ -139,3 +139,7 @@
 ## AppImage
 
 - The Linux `release` job also builds `<ASSET_PREFIX>-<version>-linux-x86_64.AppImage` with `appimagetool` 1.9.1 (downloaded and checked against a pinned SHA-256). The AppDir holds `golden-ide`, `goldenide-proxy`, the desktop file, the metainfo and `logo.png` as icon.
+
+## Linux release on Ubuntu 25.04
+
+- The Linux `release` job runs in an `ubuntu:25.04` container on `ubuntu-latest` (GitHub has no hosted 25.04 runner). A "Prepare container" step installs `sudo`, `curl`, `git`, `make`, `build-essential` and rustup. The tar.gz and the AppImage are therefore linked against the Ubuntu 25.04 glibc.
