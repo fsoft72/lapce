@@ -28,12 +28,12 @@ use lapce_rpc::{
 use crate::{
     agent_changes::ChangedFiles,
     agent_mention::{
-        filter_files, mention_at_end, mention_contexts, mention_files, Mention,
-        MAX_MENTION_FILES, MAX_MENTION_ITEMS,
+        MAX_MENTION_FILES, MAX_MENTION_ITEMS, Mention, filter_files, mention_at_end,
+        mention_contexts, mention_files,
     },
     command::{CommandExecuted, CommandKind, LapceCommand},
     editor::EditorData,
-    keypress::{condition::Condition, KeyPressFocus},
+    keypress::{KeyPressFocus, condition::Condition},
     main_split::MainSplitData,
     panel::kind::PanelKind,
     window_tab::{CommonData, Focus},

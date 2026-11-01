@@ -6,34 +6,36 @@ use std::{
     path::{Path, PathBuf},
     rc::Rc,
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicU64, Ordering},
     },
     time::Duration,
 };
 
 use floem::{
+    IntoView, View,
     action::exec_after,
     event::{Event, EventListener, EventPropagation},
     keyboard::{KeyCode, PhysicalKey},
+    peniko::Color,
     peniko::kurbo::Rect,
     prelude::SignalTrack,
     reactive::{
-        create_effect, create_memo, create_rw_signal, Memo, ReadSignal, RwSignal,
-        SignalGet, SignalUpdate, SignalWith,
+        Memo, ReadSignal, RwSignal, SignalGet, SignalUpdate, SignalWith,
+        create_effect, create_memo, create_rw_signal,
     },
-    style::CursorStyle,
+    style::{CursorStyle, Style},
+    taffy::JustifyContent,
     views::{
-        container, dyn_stack,
+        Decorators, container, dyn_stack,
         editor::{
+            WrapProp,
             text::SystemClipboard,
             text::WrapMethod,
-            view::{cursor_caret, LineRegion},
-            WrapProp,
+            view::{LineRegion, cursor_caret},
         },
-        empty, label, rich_text, scroll, stack, Decorators,
+        empty, label, rich_text, scroll, stack,
     },
-    IntoView, View,
 };
 use lapce_core::{buffer::rope_text::RopeText, register::Clipboard};
 use lapce_rpc::agent::{AgentConfigChoice, AgentConfigOption, AgentToolStatus};
@@ -43,11 +45,23 @@ use super::{
 };
 use crate::{
     agent::{AgentData, AgentItem, PICKER_VISIBLE_ITEMS},
-    config::{color::LapceColor, LapceConfig},
+    config::{LapceConfig, color::LapceColor},
     editor::view::editor_view,
-    markdown::{parse_markdown, split_markdown_blocks, MarkdownContent},
+    markdown::{MarkdownContent, parse_markdown, split_markdown_blocks},
     window_tab::{Focus, WindowTabData},
 };
+
+/// Space between the text of a message and its buttons.
+const BUTTONS_MARGIN_TOP: f32 = 10.0;
+
+/// Vertical padding of the boxes of thoughts and tool calls.
+const TINTED_BOX_PADDING_VERT: f32 = 6.0;
+
+/// Vertical padding of the box of an answer of the agent.
+const ASSISTANT_PADDING_VERT: f32 = 8.0;
+
+/// Width of the frame of the box of an answer of the agent.
+const ASSISTANT_BORDER_WIDTH: f32 = 1.5;
 
 /// Padding of a row of the changed files (horizontal, vertical).
 const CHANGES_ROW_PADDING: (f32, f32) = (12.0, 5.0);
@@ -324,6 +338,19 @@ fn markdown_block_view(
     .style(|s| s.flex_col().width_full().min_width(0.0))
 }
 
+/// Styles a transcript entry as a box tinted with `color`: a translucent
+/// background and a frame of the same color, so it reads well in the dark
+/// and in the light theme.
+fn tinted_box(style: Style, color: Color, background_alpha: f32) -> Style {
+    style
+        .margin_vert(ITEM_SPACING)
+        .padding_vert(TINTED_BOX_PADDING_VERT)
+        .border(1.0)
+        .border_radius(BOX_RADIUS)
+        .border_color(color.multiply_alpha(0.5))
+        .background(color.multiply_alpha(background_alpha))
+}
+
 /// The label and the text shown for a transcript entry.
 fn item_display(item: &AgentItem) -> (&'static str, String) {
     match item {
@@ -356,14 +383,17 @@ fn item_view(window_tab_data: Rc<WindowTabData>, index: usize) -> impl View {
         state.with_untracked(|s| s.item(index).cloned())
     });
     // The kind of an entry never changes: only its text and status do.
-    let (prefix, is_user, is_assistant) = item.with_untracked(|item| match item {
-        Some(item) => (
-            item_display(item).0,
-            matches!(item, AgentItem::User { .. }),
-            matches!(item, AgentItem::Assistant(_)),
-        ),
-        None => ("", false, false),
-    });
+    let (prefix, is_user, is_assistant, is_thought, is_tool) =
+        item.with_untracked(|item| match item {
+            Some(item) => (
+                item_display(item).0,
+                matches!(item, AgentItem::User { .. }),
+                matches!(item, AgentItem::Assistant(_)),
+                matches!(item, AgentItem::Thought(_)),
+                matches!(item, AgentItem::Tool { .. }),
+            ),
+            None => ("", false, false, false, false),
+        });
     let text = move || {
         item.with(|item| item.as_ref().map(|i| item_display(i).1))
             .unwrap_or_default()
@@ -381,9 +411,9 @@ fn item_view(window_tab_data: Rc<WindowTabData>, index: usize) -> impl View {
                 SystemClipboard::new().put_string(text_untracked());
                 agent.show_toast("Copied to clipboard");
             })
-            .style(|s| s.margin_top(ITEM_SPACING)),
+            .style(|s| s.margin_top(BUTTONS_MARGIN_TOP).margin_right(0.0)),
         ))
-        .style(|s| s.flex_col().items_start().width_full().min_width(0.0))
+        .style(|s| s.flex_col().items_end().width_full().min_width(0.0))
         .into_any()
     } else if is_user {
         let edit_agent = window_tab_data.agent.clone();
@@ -395,7 +425,7 @@ fn item_view(window_tab_data: Rc<WindowTabData>, index: usize) -> impl View {
             busy.get() && state.with(|s| s.last_user_index()) == Some(index)
         });
         stack((
-            label(text).style(|s| s.min_width(0.0).flex_grow(1.0f32)),
+            label(text).style(|s| s.min_width(0.0).width_full()),
             stack((
                 button(window_tab_data.clone(), "Edit", move || {
                     edit_agent.edit_in_input(&text_untracked());
@@ -410,7 +440,11 @@ fn item_view(window_tab_data: Rc<WindowTabData>, index: usize) -> impl View {
                 })
                 .style(move |s| s.apply_if(!running.get(), |s| s.hide())),
             ))
-            .style(|s| s.margin_top(ITEM_SPACING)),
+            .style(|s| {
+                s.margin_top(BUTTONS_MARGIN_TOP)
+                    .width_full()
+                    .justify_content(Some(JustifyContent::FlexEnd))
+            }),
         ))
         .style(|s| s.flex_col().items_start().width_full().min_width(0.0))
         .into_any()
@@ -438,6 +472,26 @@ fn item_view(window_tab_data: Rc<WindowTabData>, index: usize) -> impl View {
                     .padding_vert(USER_PROMPT_PADDING_VERT)
                     .border_radius(BOX_RADIUS)
                     .background(config.color(LapceColor::PANEL_HOVERED_BACKGROUND))
+            })
+            .apply_if(is_thought, |s| {
+                tinted_box(s, config.color(LapceColor::TERMINAL_YELLOW), 0.18)
+            })
+            .apply_if(is_tool, |s| {
+                tinted_box(s, config.color(LapceColor::TERMINAL_CYAN), 0.16)
+            })
+            .apply_if(is_assistant, |s| {
+                // The answers are what the user reads: a framed box on the
+                // editor background, brighter than the other entries.
+                s.margin_vert(ITEM_SPACING)
+                    .padding_vert(ASSISTANT_PADDING_VERT)
+                    .border(ASSISTANT_BORDER_WIDTH)
+                    .border_radius(BOX_RADIUS)
+                    .border_color(
+                        config
+                            .color(LapceColor::LAPCE_TAB_ACTIVE_UNDERLINE)
+                            .multiply_alpha(0.8),
+                    )
+                    .background(config.color(LapceColor::EDITOR_BACKGROUND))
             })
     })
 }

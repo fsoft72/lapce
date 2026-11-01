@@ -2,9 +2,9 @@
 //! file had before the first change, so the changes can be reviewed and
 //! reverted.
 
-use std::{borrow::Cow, path::PathBuf, sync::atomic::AtomicU64, sync::Arc};
+use std::{borrow::Cow, path::PathBuf, sync::Arc, sync::atomic::AtomicU64};
 
-use lapce_core::buffer::diff::{rope_diff, DiffLines};
+use lapce_core::buffer::diff::{DiffLines, rope_diff};
 use lapce_xi_rope::Rope;
 
 /// Largest number of table cells the line diff may use to count the changed
