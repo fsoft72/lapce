@@ -30,7 +30,7 @@ use super::{
     wasi::{load_all_volts, start_volt},
 };
 use crate::plugin::{
-    install_volt, psp::PluginHandlerNotification, wasi::enable_volt,
+    psp::PluginHandlerNotification,
 };
 
 pub struct PluginCatalog {
@@ -523,21 +523,6 @@ impl PluginCatalog {
                     }
                 }
             }
-            InstallVolt(volt) => {
-                tracing::debug!("InstallVolt {:?}", volt);
-                let workspace = self.workspace.clone();
-                let configurations =
-                    self.plugin_configurations.get(&volt.name).cloned();
-                let catalog_rpc = self.plugin_rpc.clone();
-                catalog_rpc.stop_volt(volt.clone());
-                thread::spawn(move || {
-                    if let Err(err) =
-                        install_volt(catalog_rpc, workspace, configurations, volt)
-                    {
-                        tracing::error!("{:?}", err);
-                    }
-                });
-            }
             ReloadVolt(volt) => {
                 tracing::debug!("ReloadVolt {:?}", volt);
                 let volt_id = volt.id();
@@ -562,21 +547,6 @@ impl PluginCatalog {
                         plugin.shutdown();
                     }
                 }
-            }
-            EnableVolt(volt) => {
-                tracing::debug!("EnableVolt {:?}", volt);
-                let volt_id = volt.id();
-                for (_, volt) in self.plugins.iter() {
-                    if volt.volt_id == volt_id {
-                        return;
-                    }
-                }
-                let plugin_rpc = self.plugin_rpc.clone();
-                thread::spawn(move || {
-                    if let Err(err) = enable_volt(plugin_rpc, volt) {
-                        tracing::error!("{:?}", err);
-                    }
-                });
             }
             DapLoaded(dap_rpc) => {
                 self.daps.insert(dap_rpc.dap_id, dap_rpc);

@@ -36,7 +36,7 @@ use crate::{
     keymap::keymap_view,
     listener::Listener,
     main_split::{SplitDirection, SplitMoveDirection, TabCloseKind},
-    plugin::{PluginData, plugin_info_view},
+    plugin::PluginData,
     settings::{settings_view, theme_color_settings_view},
     window_tab::{Focus, WindowTabData},
 };
@@ -49,7 +49,6 @@ fn editor_tab_header(
     dragging: RwSignal<Option<(RwSignal<usize>, EditorTabId)>>,
 ) -> impl View {
     let main_split = window_tab_data.main_split.clone();
-    let plugin = window_tab_data.plugin.clone();
     let editors = window_tab_data.main_split.editors;
     let diff_editors = window_tab_data.main_split.diff_editors;
     let focus = window_tab_data.common.focus;
@@ -92,9 +91,8 @@ fn editor_tab_header(
         let child_for_mouse_close = child.clone();
         let child_for_mouse_close_2 = child.clone();
         let main_split = main_split.clone();
-        let plugin = plugin.clone();
         let child_view = {
-            let info = child.view_info(editors, diff_editors, plugin, config);
+            let info = child.view_info(editors, diff_editors, config);
             let hovered = create_rw_signal(false);
 
             use crate::config::ui::TabCloseButton;
@@ -775,9 +773,6 @@ fn editor_tab_content(
                 theme_color_settings_view(editors, common).into_any()
             }
             EditorTabChild::Keymap(_) => keymap_view(editors, common).into_any(),
-            EditorTabChild::Volt(_, id) => {
-                plugin_info_view(plugin.clone(), id).into_any()
-            }
         };
         child.style(|s| s.size_full())
     };

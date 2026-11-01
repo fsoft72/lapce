@@ -12,7 +12,7 @@ use crate::{
     editor_tab::{EditorTabChild, EditorTabData},
     id::{
         DiffEditorId, EditorTabId, KeymapId, SettingsId, SplitId,
-        ThemeColorSettingsId, VoltViewId,
+        ThemeColorSettingsId,
     },
 };
 
@@ -159,9 +159,6 @@ impl MainSplitData {
                 EditorTabChild::ThemeColorSettings(ThemeColorSettingsId::next())
             }
             EditorTabChild::Keymap(_) => EditorTabChild::Keymap(KeymapId::next()),
-            EditorTabChild::Volt(_, id) => {
-                EditorTabChild::Volt(VoltViewId::next(), id.to_owned())
-            }
         };
 
         let editor_tab = {

@@ -12,7 +12,7 @@ use lapce_core::command::{
 };
 use lapce_rpc::{
     dap_types::{DapId, RunDebugConfig},
-    plugin::{PluginId, VoltID},
+    plugin::PluginId,
     proxy::ProxyStatus,
     terminal::{TermId, TerminalProfile},
 };
@@ -474,10 +474,6 @@ pub enum LapceWorkbenchCommand {
     #[strum(serialize = "toggle_source_control_focus")]
     ToggleSourceControlFocus,
 
-    #[strum(message = "Toggle Plugin Focus")]
-    #[strum(serialize = "toggle_plugin_focus")]
-    TogglePluginFocus,
-
     #[strum(message = "Toggle File Explorer Focus")]
     #[strum(serialize = "toggle_file_explorer_focus")]
     ToggleFileExplorerFocus,
@@ -500,9 +496,6 @@ pub enum LapceWorkbenchCommand {
 
     #[strum(serialize = "toggle_source_control_visual")]
     ToggleSourceControlVisual,
-
-    #[strum(serialize = "toggle_plugin_visual")]
-    TogglePluginVisual,
 
     #[strum(serialize = "toggle_file_explorer_visual")]
     ToggleFileExplorerVisual,
@@ -799,9 +792,6 @@ pub enum InternalCommand {
     DapFrameScopes {
         dap_id: DapId,
         frame_id: usize,
-    },
-    OpenVoltView {
-        volt_id: VoltID,
     },
     ResetBlinkCursor,
     OpenDiffFiles {

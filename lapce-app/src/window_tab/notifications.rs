@@ -195,8 +195,8 @@ impl WindowTabData {
             CoreNotification::OpenFileChanged { path, content } => {
                 self.main_split.open_file_changed(path, content);
             }
-            CoreNotification::VoltInstalled { volt, icon } => {
-                self.plugin.volt_installed(volt, icon);
+            CoreNotification::VoltInstalled { volt, .. } => {
+                self.plugin.volt_installed(volt);
             }
             CoreNotification::VoltRemoved { volt, .. } => {
                 self.plugin.volt_removed(volt);

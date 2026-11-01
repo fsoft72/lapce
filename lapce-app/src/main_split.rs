@@ -25,7 +25,7 @@ use floem::{
 };
 use itertools::Itertools;
 use lapce_core::{buffer::rope_text::RopeText, selection::Selection};
-use lapce_rpc::{core::FileChanged, plugin::VoltID, proxy::ProxyResponse};
+use lapce_rpc::{core::FileChanged, proxy::ProxyResponse};
 use lapce_xi_rope::Rope;
 use lsp_types::TextEdit;
 
@@ -190,7 +190,6 @@ impl MainSplitData {
             EditorTabChild::Settings(_) => None,
             EditorTabChild::ThemeColorSettings(_) => None,
             EditorTabChild::Keymap(_) => None,
-            EditorTabChild::Volt(_, _) => None,
         }
     }
 
@@ -393,10 +392,6 @@ impl MainSplitData {
         self.find_editor
             .cursor()
             .update(|cursor| cursor.set_insert(Selection::region(0, pattern_len)));
-    }
-
-    pub fn open_volt_view(&self, id: VoltID) {
-        self.get_editor_tab_child(EditorTabChildSource::Volt(id), false, false);
     }
 
     pub fn open_settings(&self) {

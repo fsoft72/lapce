@@ -431,9 +431,6 @@ impl WindowTabData {
             InternalCommand::DapFrameScopes { dap_id, frame_id } => {
                 self.terminal.dap_frame_scopes(dap_id, frame_id);
             }
-            InternalCommand::OpenVoltView { volt_id } => {
-                self.main_split.open_volt_view(volt_id);
-            }
             InternalCommand::ResetBlinkCursor => {
                 // All the editors share the blinking information and logic, so we can just reset
                 // one of them.

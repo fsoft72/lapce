@@ -1255,7 +1255,6 @@ fn should_blink(
             focus,
             Focus::Workbench
                 | Focus::Palette
-                | Focus::Panel(PanelKind::Plugin)
                 | Focus::Panel(PanelKind::Search)
                 | Focus::Panel(PanelKind::SourceControl)
                 | Focus::Panel(PanelKind::Agent)

@@ -6,7 +6,6 @@ pub mod document_symbol;
 pub mod global_search_view;
 pub mod implementation_view;
 pub mod kind;
-pub mod plugin_view;
 pub mod position;
 pub mod problem_view;
 pub mod references_view;

@@ -21,7 +21,6 @@ use super::{
     debug_view::debug_panel,
     global_search_view::global_search_panel,
     kind::PanelKind,
-    plugin_view::plugin_panel,
     position::{PanelContainerPosition, PanelPosition},
     problem_view::problem_panel,
     source_control_view::source_control_panel,
@@ -514,9 +513,6 @@ fn panel_view(
                     source_control_panel(window_tab_data.clone(), position)
                         .into_any()
                 }
-                PanelKind::Plugin => {
-                    plugin_panel(window_tab_data.clone(), position).into_any()
-                }
                 PanelKind::Search => {
                     global_search_panel(window_tab_data.clone(), position).into_any()
                 }
@@ -589,7 +585,6 @@ fn panel_picker(
                 PanelKind::Terminal => "Terminal",
                 PanelKind::FileExplorer => "File Explorer",
                 PanelKind::SourceControl => "Source Control",
-                PanelKind::Plugin => "Plugins",
                 PanelKind::Search => "Search",
                 PanelKind::Problem => "Problems",
                 PanelKind::Debug => "Debug",

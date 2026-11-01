@@ -631,9 +631,6 @@ impl WindowTabData {
             ToggleSourceControlFocus => {
                 self.toggle_panel_focus(PanelKind::SourceControl);
             }
-            TogglePluginFocus => {
-                self.toggle_panel_focus(PanelKind::Plugin);
-            }
             ToggleFileExplorerFocus => {
                 self.toggle_panel_focus(PanelKind::FileExplorer);
             }
@@ -651,9 +648,6 @@ impl WindowTabData {
             }
             ToggleSourceControlVisual => {
                 self.toggle_panel_visual(PanelKind::SourceControl);
-            }
-            TogglePluginVisual => {
-                self.toggle_panel_visual(PanelKind::Plugin);
             }
             ToggleFileExplorerVisual => {
                 self.toggle_panel_visual(PanelKind::FileExplorer);

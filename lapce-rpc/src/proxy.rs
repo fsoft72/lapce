@@ -30,7 +30,7 @@ use crate::{
     dap_types::{self, DapId, RunDebugConfig, SourceBreakpoint, ThreadId},
     file::{FileNodeItem, PathObject},
     file_line::FileLine,
-    plugin::{PluginId, VoltInfo, VoltMetadata},
+    plugin::{PluginId, VoltMetadata},
     source_control::FileDiff,
     style::SemanticStyles,
     terminal::{TermId, TerminalProfile},
@@ -278,20 +278,8 @@ pub enum ProxyNotification {
         term_id: TermId,
         profile: TerminalProfile,
     },
-    InstallVolt {
-        volt: VoltInfo,
-    },
-    RemoveVolt {
-        volt: VoltMetadata,
-    },
     ReloadVolt {
         volt: VoltMetadata,
-    },
-    DisableVolt {
-        volt: VoltInfo,
-    },
-    EnableVolt {
-        volt: VoltInfo,
     },
     GitCommit {
         message: String,
@@ -725,24 +713,8 @@ impl ProxyRpcHandler {
         self.notification(ProxyNotification::GitCheckout { reference });
     }
 
-    pub fn install_volt(&self, volt: VoltInfo) {
-        self.notification(ProxyNotification::InstallVolt { volt });
-    }
-
     pub fn reload_volt(&self, volt: VoltMetadata) {
         self.notification(ProxyNotification::ReloadVolt { volt });
-    }
-
-    pub fn remove_volt(&self, volt: VoltMetadata) {
-        self.notification(ProxyNotification::RemoveVolt { volt });
-    }
-
-    pub fn disable_volt(&self, volt: VoltInfo) {
-        self.notification(ProxyNotification::DisableVolt { volt });
-    }
-
-    pub fn enable_volt(&self, volt: VoltInfo) {
-        self.notification(ProxyNotification::EnableVolt { volt });
     }
 
     pub fn shutdown(&self) {

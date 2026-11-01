@@ -14,7 +14,6 @@ use lapce_rpc::{
 use thiserror::Error;
 use tracing::{debug, error};
 
-
 #[derive(Clone, Copy, Error, Debug, PartialEq, Eq, strum_macros::Display)]
 #[strum(ascii_case_insensitive)]
 enum HostPlatform {
@@ -60,7 +59,6 @@ pub trait Remote: Sized {
 
         Ok(String::from_utf8(cmd.stdout)?)
     }
-
 
     fn command_builder(&self) -> Command;
 }

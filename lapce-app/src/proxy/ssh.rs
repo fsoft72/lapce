@@ -1,6 +1,5 @@
 use std::process::Command;
 
-
 use super::remote::Remote;
 use crate::{proxy::new_command, workspace::SshHost};
 

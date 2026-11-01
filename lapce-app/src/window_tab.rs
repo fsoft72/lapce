@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::BTreeMap,
     path::{Path, PathBuf},
     rc::Rc,
     sync::{
@@ -500,14 +500,7 @@ impl WindowTabData {
         let rename = RenameData::new(cx, main_split.editors, common.clone());
         let global_search = GlobalSearchData::new(cx, main_split.clone());
 
-        let plugin = PluginData::new(
-            cx,
-            HashSet::from_iter(disabled_volts),
-            HashSet::from_iter(workspace_disabled_volts),
-            main_split.editors,
-            common.clone(),
-            proxy.core_rpc.clone(),
-        );
+        let plugin = PluginData::new(cx, common.clone());
         let agent =
             AgentData::new(cx, main_split.clone(), common.clone(), window_focused);
 
@@ -723,9 +716,6 @@ impl WindowTabData {
             }
             Focus::Panel(PanelKind::Search) => {
                 Some(keypress.key_down(event, &self.global_search))
-            }
-            Focus::Panel(PanelKind::Plugin) => {
-                Some(keypress.key_down(event, &self.plugin))
             }
             Focus::Panel(PanelKind::SourceControl) => {
                 Some(keypress.key_down(event, &self.source_control))

@@ -342,25 +342,8 @@ impl ProxyHandler for Dispatcher {
                     tracing::error!("{:?}", err);
                 }
             }
-            InstallVolt { volt } => {
-                let catalog_rpc = self.catalog_rpc.clone();
-                if let Err(err) = catalog_rpc.install_volt(volt) {
-                    tracing::error!("{:?}", err);
-                }
-            }
             ReloadVolt { volt } => {
                 if let Err(err) = self.catalog_rpc.reload_volt(volt) {
-                    tracing::error!("{:?}", err);
-                }
-            }
-            RemoveVolt { volt } => {
-                self.catalog_rpc.remove_volt(volt);
-            }
-            DisableVolt { volt } => {
-                self.catalog_rpc.stop_volt(volt);
-            }
-            EnableVolt { volt } => {
-                if let Err(err) = self.catalog_rpc.enable_volt(volt) {
                     tracing::error!("{:?}", err);
                 }
             }

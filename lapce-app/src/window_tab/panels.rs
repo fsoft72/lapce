@@ -18,7 +18,6 @@ impl WindowTabData {
     pub(super) fn toggle_panel_focus(&self, kind: PanelKind) {
         let should_hide = match kind {
             PanelKind::FileExplorer
-            | PanelKind::Plugin
             | PanelKind::Problem
             | PanelKind::Debug
             | PanelKind::CallHierarchy

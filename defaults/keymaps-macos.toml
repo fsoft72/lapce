@@ -288,10 +288,6 @@ key = "meta+shift+f"
 command = "toggle_search_focus"
 
 [[keymaps]]
-key = "meta+shift+x"
-command = "toggle_plugin_focus"
-
-[[keymaps]]
 key = "meta+shift+m"
 command = "toggle_problem_focus"
 

@@ -16,7 +16,7 @@ use jsonrpc_lite::{Id, Params};
 use lapce_core::directory::Directory;
 use lapce_rpc::{
     RpcError,
-    plugin::{PluginId, VoltID, VoltInfo, VoltMetadata},
+    plugin::{PluginId, VoltID, VoltMetadata},
     style::LineStyle,
 };
 use lapce_xi_rope::{Rope, RopeDelta};
@@ -411,18 +411,6 @@ pub fn load_volt(path: &Path) -> Result<VoltMetadata> {
     });
 
     Ok(meta)
-}
-
-pub fn enable_volt(
-    plugin_rpc: PluginCatalogRpcHandler,
-    volt: VoltInfo,
-) -> Result<()> {
-    let path = Directory::plugins_directory()
-        .ok_or_else(|| anyhow!("can't get plugin directory"))?
-        .join(volt.id().to_string());
-    let meta = load_volt(&path)?;
-    plugin_rpc.unactivated_volts(vec![meta])?;
-    Ok(())
 }
 
 pub fn start_volt(
