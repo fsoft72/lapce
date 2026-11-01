@@ -23,6 +23,7 @@ use lapce_rpc::agent::{
 use lapce_rpc::proxy::{ProxyResponse, ProxyRpcHandler};
 
 use crate::{
+    agent_changes::ChangedFiles,
     agent_mention::{
         filter_files, mention_at_end, mention_contexts, mention_files, Mention,
         MAX_MENTION_FILES, MAX_MENTION_ITEMS,
@@ -166,6 +167,11 @@ pub struct AgentState {
     pub pending: VecDeque<PendingPermission>,
     /// The model and effort settings the agent offers, empty until it says so.
     pub config_options: Vec<AgentConfigOption>,
+    /// The files the agent changed since the chat started or the last review.
+    changes: ChangedFiles,
+    /// Bumped whenever `changes` changes, so the panel can follow it without
+    /// copying the file contents.
+    changes_revision: u64,
 }
 
 impl Default for AgentState {
@@ -180,11 +186,24 @@ impl Default for AgentState {
             busy: false,
             pending: VecDeque::new(),
             config_options: Vec::new(),
+            changes: ChangedFiles::default(),
+            changes_revision: 0,
         }
     }
 }
 
 impl AgentState {
+    /// The files the agent changed since the chat started or the last review.
+    pub fn changes(&self) -> &ChangedFiles {
+        &self.changes
+    }
+
+    /// Forgets the changed files, after they were approved or reverted.
+    pub fn clear_changes(&mut self) {
+        self.changes.clear();
+        self.changes_revision += 1;
+    }
+
     /// The transcript, oldest first.
     pub fn items(&self) -> &im::Vector<AgentItem> {
         &self.items
@@ -390,6 +409,18 @@ impl AgentState {
                     options: options.clone(),
                 });
             }
+            AgentEvent::FileChange {
+                path,
+                old_text,
+                new_text,
+            } => {
+                self.changes.record(
+                    path.clone(),
+                    old_text.clone(),
+                    new_text.clone(),
+                );
+                self.changes_revision += 1;
+            }
             AgentEvent::ConfigOptions { options } => {
                 self.config_options = options.clone();
             }
@@ -481,6 +512,8 @@ pub struct AgentStateMemos {
     pub model: Memo<Option<AgentConfigOption>>,
     /// The effort setting, if the agent offers one.
     pub effort: Memo<Option<AgentConfigOption>>,
+    /// Moves whenever the list of changed files changes.
+    pub changes_revision: Memo<u64>,
 }
 
 impl AgentStateMemos {
@@ -499,6 +532,8 @@ impl AgentStateMemos {
             effort: cx.create_memo(move |_| {
                 state.with(|s| s.config_option(AgentConfigKind::Effort).cloned())
             }),
+            changes_revision: cx
+                .create_memo(move |_| state.with(|s| s.changes_revision)),
         }
     }
 }
@@ -1279,6 +1314,24 @@ mod tests {
         assert_eq!(state.current_permission().unwrap().request_id, 2);
         assert_eq!(state.take_pending().unwrap().request_id, 2);
         assert!(state.take_pending().is_none());
+    }
+
+    #[test]
+    fn file_changes_are_listed_until_cleared() {
+        let mut state = AgentState::default();
+        let revision = state.changes_revision;
+        state.apply(&AgentEvent::FileChange {
+            path: "/w/a.rs".into(),
+            old_text: Some("old".into()),
+            new_text: "new".into(),
+        });
+        assert_eq!(state.changes().files().len(), 1);
+        assert!(state.changes_revision > revision);
+        // A new transcript does not forget the changed files.
+        state.clear_chat();
+        assert_eq!(state.changes().files().len(), 1);
+        state.clear_changes();
+        assert!(state.changes().is_empty());
     }
 
     #[test]

@@ -3,8 +3,8 @@
 use agent_client_protocol::schema::v1::{
     ContentBlock, PermissionOptionKind, RequestPermissionRequest, SessionConfigKind,
     SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption,
-    SessionConfigSelectOptions, SessionUpdate, ToolCall, ToolCallStatus,
-    ToolCallUpdate,
+    SessionConfigSelectOptions, SessionUpdate, ToolCall, ToolCallContent,
+    ToolCallStatus, ToolCallUpdate,
 };
 use lapce_rpc::agent::{
     AgentConfigChoice, AgentConfigKind, AgentConfigOption, AgentEvent,
@@ -66,6 +66,42 @@ pub fn map_update(update: SessionUpdate) -> Option<AgentEvent> {
             })
         }
         _ => None,
+    }
+}
+
+/// Collects the file changes of the diff blocks in `content`.
+fn diff_events(content: &[ToolCallContent]) -> Vec<AgentEvent> {
+    content
+        .iter()
+        .filter_map(|block| match block {
+            ToolCallContent::Diff(diff) => Some(AgentEvent::FileChange {
+                path: diff.path.clone(),
+                old_text: diff.old_text.clone(),
+                new_text: diff.new_text.clone(),
+            }),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The file changes reported by a session update. Only a completed tool call
+/// counts: a pending one may still be rejected, a failed one changed nothing.
+pub fn map_file_changes(update: &SessionUpdate) -> Vec<AgentEvent> {
+    match update {
+        SessionUpdate::ToolCall(call) if call.status == ToolCallStatus::Completed => {
+            diff_events(&call.content)
+        }
+        SessionUpdate::ToolCallUpdate(update)
+            if update.fields.status == Some(ToolCallStatus::Completed) =>
+        {
+            update
+                .fields
+                .content
+                .as_deref()
+                .map(diff_events)
+                .unwrap_or_default()
+        }
+        _ => Vec::new(),
     }
 }
 
@@ -194,6 +230,41 @@ mod tests {
                 status: Some(AgentToolStatus::Completed),
             })
         );
+    }
+
+    /// A tool call update with one diff block and the given status.
+    fn diff_update(status: ToolCallStatus) -> SessionUpdate {
+        let diff = agent_client_protocol::schema::v1::Diff::new("/w/a.rs", "new")
+            .old_text("old");
+        SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
+            "t1",
+            ToolCallUpdateFields::new()
+                .status(status)
+                .content(vec![ToolCallContent::Diff(diff)]),
+        ))
+    }
+
+    #[test]
+    fn a_completed_diff_is_a_file_change() {
+        assert_eq!(
+            map_file_changes(&diff_update(ToolCallStatus::Completed)),
+            vec![AgentEvent::FileChange {
+                path: "/w/a.rs".into(),
+                old_text: Some("old".into()),
+                new_text: "new".into(),
+            }]
+        );
+    }
+
+    #[test]
+    fn a_diff_that_is_not_completed_is_not_a_file_change() {
+        for status in [
+            ToolCallStatus::Pending,
+            ToolCallStatus::InProgress,
+            ToolCallStatus::Failed,
+        ] {
+            assert!(map_file_changes(&diff_update(status)).is_empty());
+        }
     }
 
     #[test]

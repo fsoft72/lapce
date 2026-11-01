@@ -36,7 +36,8 @@ use parking_lot::Mutex;
 
 use super::{
     mapping::{
-        map_config_options, map_permission_options, map_update, permission_title,
+        map_config_options, map_file_changes, map_permission_options, map_update,
+        permission_title,
     },
     paths::{resolve_workspace_path, slice_lines},
     permission::PermissionBroker,
@@ -319,6 +320,9 @@ async fn connect(
             {
                 let env = env.clone();
                 async move |notification: SessionNotification, _cx| {
+                    for event in map_file_changes(&notification.update) {
+                        env.emit(event);
+                    }
                     match map_update(notification.update) {
                         Some(event) => {
                             tracing::debug!("agent update forwarded to the UI");

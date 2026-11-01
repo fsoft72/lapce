@@ -143,6 +143,13 @@ pub enum AgentEvent {
         title: Option<String>,
         status: Option<AgentToolStatus>,
     },
+    /// The agent changed a file, reported by a completed edit tool through an
+    /// ACP diff block. `old_text` is `None` when the file did not exist.
+    FileChange {
+        path: PathBuf,
+        old_text: Option<String>,
+        new_text: String,
+    },
     PermissionRequest {
         request_id: AgentRequestId,
         title: String,
