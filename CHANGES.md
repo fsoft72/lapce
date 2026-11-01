@@ -1,5 +1,20 @@
 # Changes
 
+## Rebrand to GoldenIDE
+
+- Project renamed from Lapce to GoldenIDE. Executable is `goldend-ide`, remote proxy is `goldenide-proxy`. Crates are now `goldenide-app`, `goldenide-core`, `goldenide-proxy`, `goldenide-rpc` (directories renamed too). Identifiers (`GoldenIdeColor`, `GoldenIdeConfig`, ...), theme color keys (`goldenide.*`), env vars (`GOLDENIDE_*`), per-project dir (`.goldenide`), app id (`dev.goldenide.goldenide`) and packaging files were renamed accordingly. The user config and data directories change name, so existing Lapce settings are not picked up.
+- Kept as is on purpose: the external `lapce-xi-rope` crate, git dependencies from `github.com/lapce/*`, and the wasm plugin ABI (import module `"lapce"`), so existing wasm plugins keep working. `LICENSE` and `CHANGELOG.md` are untouched.
+- Logo images (`extra/images`, icons, `.ico`, `.icns`) are still the Lapce ones and must be replaced with GoldenIDE artwork.
+- README, CONTRIBUTING, About dialog, metainfo and issue templates no longer point to Lapce website, docs, Discord or Matrix. About links to the upstream Lapce repository for attribution.
+
+## Removed online features
+
+- Removed the auto-updater (`update.rs`, "Restart to update" command, update badge and `updater` cargo feature) and the release workflow.
+- Removed the tree-sitter grammar and query download from GitHub releases. Syntax highlighting only works with grammars already present in the local grammars directory.
+- Removed the automatic download and upload of the remote proxy (SSH, WSL, containers). The `goldenide-proxy` binary must be installed manually on the remote host, otherwise the connection fails with an explicit error.
+- Removed the plugin marketplace: Plugins panel, plugin details tab, `toggle_plugin_*` commands and keymaps, install, remove, enable and disable RPCs, registry download code and the `reqwest` HTTP helper (`get_url`).
+- The WASI runtime and local `volt.toml` plugin loading were kept: language servers are started by wasm plugins, so removing the runtime would disable LSP. Plugins are only loaded from the local plugins directory.
+
 ## Editor font zoom
 
 - Added `editor_font_increase`, `editor_font_decrease` and `editor_font_reset` commands. They change `editor.font-size` (clamped to 6-32) and persist it in `settings.toml`.
@@ -14,7 +29,7 @@
 
 ## Build scripts
 
-- Added `scripts/build-release.sh` (release build copied to `bin/lapcie`) and `scripts/build-debug.sh` (debug build copied to `bin/lapcie-debug`). `bin/` is git-ignored.
+- Added `scripts/build-release.sh` (release build copied to `bin/goldend-ide`) and `scripts/build-debug.sh` (debug build copied to `bin/goldend-ide-debug`). `bin/` is git-ignored.
 
 ## AI agent panel
 

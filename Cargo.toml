@@ -1,33 +1,32 @@
 [package]
-name         = "lapce"
+name         = "goldenide"
 version      = { workspace = true }
 authors      = { workspace = true }
 edition      = { workspace = true }
 license      = { workspace = true }
 rust-version = { workspace = true }
-default-run  = "lapce"
+default-run  = "goldend-ide"
 
 [dependencies]
-lapce-app   = { path = "./lapce-app" }
-lapce-proxy = { path = "./lapce-proxy" }
+goldenide-app   = { path = "./goldenide-app" }
+goldenide-proxy = { path = "./goldenide-proxy" }
 
 [[bin]]
-name = "lapce"
-path = "lapce-app/src/bin/lapce.rs"
+name = "goldend-ide"
+path = "goldenide-app/src/bin/goldend-ide.rs"
 
 [[bin]]
-name = "lapce-proxy"
-path = "lapce-proxy/src/bin/lapce-proxy.rs"
+name = "goldenide-proxy"
+path = "goldenide-proxy/src/bin/goldenide-proxy.rs"
 
 [workspace]
-members = ["lapce-app", "lapce-proxy", "lapce-rpc", "lapce-core"]
+members = ["goldenide-app", "goldenide-proxy", "goldenide-rpc", "goldenide-core"]
 
 [workspace.package]
 version      = "0.4.6"
 edition      = "2024"
 rust-version = "1.98.0"
 license      = "Apache-2.0"
-homepage     = "https://lapce.dev"
 authors      = ["Dongdong Zhou <dzhou121@gmail.com>"]
 
 [workspace.dependencies]
@@ -68,9 +67,9 @@ psp-types = { git = "https://github.com/lapce/psp-types", rev = "f7fea28f59e7b2d
 
 lapce-xi-rope = { version = "0.3.2", features = ["serde"] }
 
-lapce-core  = { path = "./lapce-core" }
-lapce-rpc   = { path = "./lapce-rpc" }
-lapce-proxy = { path = "./lapce-proxy" }
+goldenide-core  = { path = "./goldenide-core" }
+goldenide-rpc   = { path = "./goldenide-rpc" }
+goldenide-proxy = { path = "./goldenide-proxy" }
 
 [workspace.dependencies.floem]
 # path = "../floem"
@@ -128,13 +127,13 @@ lto           = true
 codegen-units = 1
 
 # A profile which compiles all (non-workspace) dependencies in release mode
-# but Lapce code in dev mode. This gives a good debugging experience for your
+# but GoldenIDE code in dev mode. This gives a good debugging experience for your
 # code and fast performance of other people's code. After the initial
 # build subsequent ones are as fast as dev mode builds.
 # See https://doc.rust-lang.org/cargo/reference/profiles.html
 # To use this profile:
 #   cargo build --profile fastdev
-#   cargo run --profile fastdev --bin lapce
+#   cargo run --profile fastdev --bin goldend-ide
 [profile.fastdev.package."*"]
 opt-level = 3
 

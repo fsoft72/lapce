@@ -1,8 +1,8 @@
 # Updating versioning for package managers and whatnot
 
-- App metainfo: `extra/linux/dev.lapce.lapce.metainfo.xml`
-- macOS plist (`CFBundleShortVersionString`): `extra/macos/Lapce.app/Contents/Info.plist`
+- App metainfo: `extra/linux/dev.goldenide.goldenide.metainfo.xml`
+- macOS plist (`CFBundleShortVersionString`): `extra/macos/GoldenIDE.app/Contents/Info.plist`
 - Rust: `Cargo.toml`
 - Obviously changelog: `CHANGELOG.md`
-- RPM spec: `lapce.spec`
-- Windows wix spec (`<Product [...] Version=X.X.X>`): `extra/windows/wix/lapce.wxs`
+- RPM spec: `goldenide.spec`
+- Windows wix spec (`<Product [...] Version=X.X.X>`): `extra/windows/wix/goldenide.wxs`

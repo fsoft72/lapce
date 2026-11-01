@@ -1,6 +1,6 @@
 .vscode
 .codegraph/
-.lapce
+.goldenide
 .idea
 .fleet
 shell.nix
@@ -15,4 +15,4 @@ vendor/
 *.gz
 
 bin/
-lapce-agent.log
+goldenide-agent.log

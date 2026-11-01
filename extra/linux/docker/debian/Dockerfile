@@ -99,16 +99,16 @@ export CARGO_BUILD_TARGET="$(xx-cargo --print-target-triple)"
 
 xx-cargo build \
   --frozen \
-  --package lapce-app \
+  --package goldenide-app \
   --profile release-lto \
   --no-default-features
 
-xx-verify "${CARGO_TARGET_DIR}"/"$(xx-cargo --print-target-triple)"/release-lto/lapce
+xx-verify "${CARGO_TARGET_DIR}"/"$(xx-cargo --print-target-triple)"/release-lto/goldend-ide
 
 mkdir -p /target
-mv -v "${CARGO_TARGET_DIR}"/"$(xx-cargo --print-target-triple)"/release-lto/lapce /target/
+mv -v "${CARGO_TARGET_DIR}"/"$(xx-cargo --print-target-triple)"/release-lto/goldend-ide /target/
 
-cargo pkgid | cut -d'#' -f2 | cut -d'@' -f2 | cut -d':' -f2 | tee /target/lapce.version
+cargo pkgid | cut -d'#' -f2 | cut -d'@' -f2 | cut -d':' -f2 | tee /target/goldend-ide.version
 EOF
 
 WORKDIR /output
@@ -121,27 +121,27 @@ export _PACKAGE_ARCHITECTURE=$(xx-info debian-arch)
 mkdir -v -p ${PACKAGE_NAME}/{etc,usr/{bin,share/{applications,metainfo,pixmaps}},debian}
 cd ${PACKAGE_NAME}
 
-cp '/source/extra/linux/dev.lapce.lapce.desktop' './usr/share/applications/dev.lapce.lapce.desktop'
-cp '/source/extra/linux/dev.lapce.lapce.metainfo.xml' './usr/share/metainfo/dev.lapce.lapce.metainfo.xml'
-cp '/source/extra/images/logo.png' './usr/share/pixmaps/dev.lapce.lapce.png'
+cp '/source/extra/linux/dev.goldenide.goldenide.desktop' './usr/share/applications/dev.goldenide.goldenide.desktop'
+cp '/source/extra/linux/dev.goldenide.goldenide.metainfo.xml' './usr/share/metainfo/dev.goldenide.goldenide.metainfo.xml'
+cp '/source/extra/images/logo.png' './usr/share/pixmaps/dev.goldenide.goldenide.png'
 
-mv '/target/lapce' './usr/bin/'
+mv '/target/goldend-ide' './usr/bin/'
 
-if [[ "${PACKAGE_NAME}" == "lapce" ]]; then
-  conflicts="lapce-nightly"
+if [[ "${PACKAGE_NAME}" == "goldenide" ]]; then
+  conflicts="goldenide-nightly"
 else
-  conflicts="lapce"
+  conflicts="goldenide"
 fi
 
 case "${RELEASE_TAG_NAME}" in
   nightly-*)
-    version=$(cat /target/lapce.version)
+    version=$(cat /target/goldend-ide.version)
     commit=$(echo "${RELEASE_TAG_NAME}" | cut -d'-' -f2)
     # date=$(date +%Y%m%d%H%M)
     RELEASE_TAG_NAME="${version}+${commit}"
   ;;
   debug|nightly)
-    version=$(cat /target/lapce.version)
+    version=$(cat /target/goldend-ide.version)
     date=$(date +%Y%m%d%H%M)
     RELEASE_TAG_NAME="${version}+${date}"
   ;;
@@ -157,10 +157,9 @@ cat <<- EOL > debian/control
 	Maintainer: Jakub Panek <me+debian@panekj.dev>
 	Architecture: ${_PACKAGE_ARCHITECTURE}
 	Description: Lightning-fast and Powerful Code Editor
-	Source: https://lapce.dev
 EOL
 
-depends=$(dpkg-shlibdeps -O -e usr/bin/lapce)
+depends=$(dpkg-shlibdeps -O -e usr/bin/goldend-ide)
 depends=$(echo "${depends}" | sed 's/shlibs:Depends=//')
 echo "Depends: ${depends}" >> debian/control
 mv debian DEBIAN
@@ -174,10 +173,10 @@ FROM build-base AS dev
 COPY . ./dev
 
 FROM scratch AS binary
-COPY --from=build /output/lapce .
+COPY --from=build /output/goldend-ide .
 
 FROM scratch AS cross-binary
-COPY --from=build /output/lapce .
+COPY --from=build /output/goldend-ide .
 
 FROM scratch AS package
 COPY --from=build /output/*.deb .

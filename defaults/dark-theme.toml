@@ -1,7 +1,7 @@
 #:schema ../extra/schemas/color-theme.json
 
 [color-theme]
-name = "Lapce Dark"
+name = "GoldenIDE Dark"
 
 [ui]
 font-family = ""
@@ -82,38 +82,38 @@ dim-text = "#5C6370"
 "bracket.unpaired" = "$red"
 
 [color-theme.ui]
-"lapce.error" = "$red"
-"lapce.warn" = "$yellow"
-"lapce.dropdown_shadow" = "#000000"
-"lapce.border" = "#000000"
-"lapce.scroll_bar" = "#3E4451BB"
+"goldenide.error" = "$red"
+"goldenide.warn" = "$yellow"
+"goldenide.dropdown_shadow" = "#000000"
+"goldenide.border" = "#000000"
+"goldenide.scroll_bar" = "#3E4451BB"
 
-"lapce.button.primary.background" = "#50a14f"
-"lapce.button.primary.foreground" = "$black"
+"goldenide.button.primary.background" = "#50a14f"
+"goldenide.button.primary.foreground" = "$black"
 
 # tab
-"lapce.tab.active.background" = "$primary-background"
-"lapce.tab.active.foreground" = "$text"
-"lapce.tab.active.underline" = "#528BFF"
+"goldenide.tab.active.background" = "$primary-background"
+"goldenide.tab.active.foreground" = "$text"
+"goldenide.tab.active.underline" = "#528BFF"
 
-"lapce.tab.inactive.background" = "$secondary-background"
-"lapce.tab.inactive.foreground" = "$text"
-"lapce.tab.inactive.underline" = "#528BFF77"
+"goldenide.tab.inactive.background" = "$secondary-background"
+"goldenide.tab.inactive.foreground" = "$text"
+"goldenide.tab.inactive.underline" = "#528BFF77"
 
-"lapce.tab.separator" = ""
+"goldenide.tab.separator" = ""
 
-"lapce.icon.active" = "$text"
-"lapce.icon.inactive" = "$dim-text"
+"goldenide.icon.active" = "$text"
+"goldenide.icon.inactive" = "$dim-text"
 
-"lapce.remote.icon" = "$black"
-"lapce.remote.local" = "#4078F2"
-"lapce.remote.connected" = "#50A14F"
-"lapce.remote.connecting" = "#C18401"
-"lapce.remote.disconnected" = "#E45649"
+"goldenide.remote.icon" = "$black"
+"goldenide.remote.local" = "#4078F2"
+"goldenide.remote.connected" = "#50A14F"
+"goldenide.remote.connecting" = "#C18401"
+"goldenide.remote.disconnected" = "#E45649"
 
-"lapce.plugin.name" = "#DDDDDD"
-"lapce.plugin.description" = "$text"
-"lapce.plugin.author" = "#B0B0B0"
+"goldenide.plugin.name" = "#DDDDDD"
+"goldenide.plugin.description" = "$text"
+"goldenide.plugin.author" = "#B0B0B0"
 
 "editor.background" = "$primary-background"
 "editor.foreground" = "$text"

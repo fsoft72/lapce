@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add an agent panel to Lapce that talks to an external ACP agent (Claude Code adapter, pi adapter) running in `lapce-proxy`, with edits applied to editor buffers and per-request approval.
+**Goal:** Add an agent panel to GoldenIDE that talks to an external ACP agent (Claude Code adapter, pi adapter) running in `goldenide-proxy`, with edits applied to editor buffers and per-request approval.
 
-**Architecture:** `lapce-proxy` owns the agent subprocess and the ACP session (official `agent-client-protocol` crate, driven by `futures::executor::block_on` on a dedicated thread, because the proxy is synchronous and the crate is runtime agnostic). The agent's file reads go through the dispatcher (which owns the synced buffers). Writes to open files go to the UI as a notification and are applied as one undoable edit; writes to closed files go straight to disk. The UI holds a plain `AgentState` (unit testable) inside a signal and renders it in a new `PanelKind::Agent`.
+**Architecture:** `goldenide-proxy` owns the agent subprocess and the ACP session (official `agent-client-protocol` crate, driven by `futures::executor::block_on` on a dedicated thread, because the proxy is synchronous and the crate is runtime agnostic). The agent's file reads go through the dispatcher (which owns the synced buffers). Writes to open files go to the UI as a notification and are applied as one undoable edit; writes to closed files go straight to disk. The UI holds a plain `AgentState` (unit testable) inside a signal and renders it in a new `PanelKind::Agent`.
 
 **Tech Stack:** Rust 1.98 (edition 2024), floem UI, `agent-client-protocol = "=2.2.0"` (schema v1), `futures` 0.3, crossbeam channels.
 
@@ -28,8 +28,8 @@
 
 These are corrections to the approved spec, discovered while reading the code. They are written into the spec at the start of Task 1.
 
-1. **Terminal requests are out of v1.** `ClientCapabilities.terminal` stays `false`; the agent uses its own shell tool and asks for permission through `session/request_permission`. Mapping ACP `terminal/*` onto Lapce's PTY terminal is a separate feature.
-2. **Permissions come from the agent.** ACP has no client-side gate on `fs/write_text_file`. The agent asks first with `session/request_permission`; Lapce shows that prompt. Lapce additionally enforces a workspace path guard on every read and write.
+1. **Terminal requests are out of v1.** `ClientCapabilities.terminal` stays `false`; the agent uses its own shell tool and asks for permission through `session/request_permission`. Mapping ACP `terminal/*` onto GoldenIDE's PTY terminal is a separate feature.
+2. **Permissions come from the agent.** ACP has no client-side gate on `fs/write_text_file`. The agent asks first with `session/request_permission`; GoldenIDE shows that prompt. GoldenIDE additionally enforces a workspace path guard on every read and write.
 3. **File routing.** `CoreRequest` is an empty enum and the UI has no reply path, so a "proxy asks UI" request/response is not available. Instead: reads run in the dispatcher (which already has synced buffers via `ProxyNotification::Update`); writes to an open file send `CoreNotification::AgentApplyEdit` to the UI, writes to a closed file are written to disk by the proxy.
 4. **Open questions resolved.** The ACP crate has no tokio dependency, so `futures::executor::block_on` on a dedicated thread fits the proxy. The proxy does hold synced buffer copies, but they live inside the single-threaded dispatcher, hence the new `ProxyRequest`s. Default panel position: right side (`RightTop`).
 5. **Known limitation.** After an agent write to an open buffer, the proxy copy of that buffer updates when the UI's `Update` notification arrives, so an immediate re-read by the agent can briefly see the old text.
@@ -48,32 +48,32 @@ Inputs and conditions the spec implies but does not test directly. Each has a te
 ## File Structure
 
 Create:
-- `lapce-rpc/src/agent.rs`: shared types (`AgentServerConfig`, `AgentContext`, `AgentEvent`, ...).
-- `lapce-proxy/src/agent/mod.rs`: `AgentManager` (thread and channel lifecycle).
-- `lapce-proxy/src/agent/permission.rs`: `PermissionBroker` (pending permission replies).
-- `lapce-proxy/src/agent/paths.rs`: workspace path guard and `slice_lines`.
-- `lapce-proxy/src/agent/prompt.rs`: builds prompt text from user text plus context.
-- `lapce-proxy/src/agent/mapping.rs`: ACP updates to `AgentEvent`.
-- `lapce-proxy/src/agent/fs.rs`: `read_text` and `write_text` used by the dispatcher.
-- `lapce-proxy/src/agent/session.rs`: the ACP client session driver.
-- `lapce-proxy/examples/mock_acp_agent.rs`: mock agent for the integration test.
-- `lapce-proxy/tests/agent_session.rs`: integration test.
-- `lapce-app/src/config/agent.rs`: `AgentConfig` (settings).
-- `lapce-app/src/agent.rs`: `AgentState`, `AgentData`.
-- `lapce-app/src/panel/agent_view.rs`: floem view.
+- `goldenide-rpc/src/agent.rs`: shared types (`AgentServerConfig`, `AgentContext`, `AgentEvent`, ...).
+- `goldenide-proxy/src/agent/mod.rs`: `AgentManager` (thread and channel lifecycle).
+- `goldenide-proxy/src/agent/permission.rs`: `PermissionBroker` (pending permission replies).
+- `goldenide-proxy/src/agent/paths.rs`: workspace path guard and `slice_lines`.
+- `goldenide-proxy/src/agent/prompt.rs`: builds prompt text from user text plus context.
+- `goldenide-proxy/src/agent/mapping.rs`: ACP updates to `AgentEvent`.
+- `goldenide-proxy/src/agent/fs.rs`: `read_text` and `write_text` used by the dispatcher.
+- `goldenide-proxy/src/agent/session.rs`: the ACP client session driver.
+- `goldenide-proxy/examples/mock_acp_agent.rs`: mock agent for the integration test.
+- `goldenide-proxy/tests/agent_session.rs`: integration test.
+- `goldenide-app/src/config/agent.rs`: `AgentConfig` (settings).
+- `goldenide-app/src/agent.rs`: `AgentState`, `AgentData`.
+- `goldenide-app/src/panel/agent_view.rs`: floem view.
 
-Modify: `lapce-rpc/src/{lib,proxy,core}.rs`, `lapce-proxy/{Cargo.toml,src/lib.rs,src/dispatch.rs}`, `lapce-app/src/{lib,config,window_tab,command,doc}.rs`, `lapce-app/src/panel/{kind,mod,data,view}.rs`, `lapce-app/src/config/icon.rs`, `defaults/{settings,icon-theme}.toml`, `icons/codicons/agent.svg` (new), `CHANGES.md`, and the spec.
+Modify: `goldenide-rpc/src/{lib,proxy,core}.rs`, `goldenide-proxy/{Cargo.toml,src/lib.rs,src/dispatch.rs}`, `goldenide-app/src/{lib,config,window_tab,command,doc}.rs`, `goldenide-app/src/panel/{kind,mod,data,view}.rs`, `goldenide-app/src/config/icon.rs`, `defaults/{settings,icon-theme}.toml`, `icons/codicons/agent.svg` (new), `CHANGES.md`, and the spec.
 
 ---
 
 ### Task 1: Shared RPC types
 
 **Files:**
-- Create: `lapce-rpc/src/agent.rs`
-- Modify: `lapce-rpc/src/lib.rs`, `docs/superpowers/specs/2026-09-24-agent-panel-design.md`, `CHANGES.md`
+- Create: `goldenide-rpc/src/agent.rs`
+- Modify: `goldenide-rpc/src/lib.rs`, `docs/superpowers/specs/2026-09-24-agent-panel-design.md`, `CHANGES.md`
 
 **Interfaces:**
-- Produces (all in `lapce_rpc::agent`, all `Debug + Clone + Serialize + Deserialize`): `AgentRequestId = u64`, `AgentServerConfig { command: String, args: Vec<String>, env: HashMap<String, String> }`, `AgentContext { path: PathBuf, selection: Option<String> }`, `AgentPermissionKind { AllowOnce, AllowAlways, RejectOnce, RejectAlways }`, `AgentPermissionOption { id: String, name: String, kind: AgentPermissionKind }`, `AgentToolStatus { Pending, InProgress, Completed, Failed }`, `AgentStatus { Starting, Ready, Disconnected { reason: String } }`, `AgentEvent` (variants below).
+- Produces (all in `goldenide_rpc::agent`, all `Debug + Clone + Serialize + Deserialize`): `AgentRequestId = u64`, `AgentServerConfig { command: String, args: Vec<String>, env: HashMap<String, String> }`, `AgentContext { path: PathBuf, selection: Option<String> }`, `AgentPermissionKind { AllowOnce, AllowAlways, RejectOnce, RejectAlways }`, `AgentPermissionOption { id: String, name: String, kind: AgentPermissionKind }`, `AgentToolStatus { Pending, InProgress, Completed, Failed }`, `AgentStatus { Starting, Ready, Disconnected { reason: String } }`, `AgentEvent` (variants below).
 
 - [ ] **Step 1: Update the spec with the deltas**
 
@@ -83,7 +83,7 @@ Append this section to the end of `docs/superpowers/specs/2026-09-24-agent-panel
 ## Changes found during planning
 
 - Terminal requests are out of v1: `terminal` capability is not advertised. The agent uses its own shell tool and asks permission through `session/request_permission`.
-- ACP has no client-side gate on `fs/write_text_file`. Permission prompts come from the agent. Lapce enforces a workspace path guard on every read and write.
+- ACP has no client-side gate on `fs/write_text_file`. Permission prompts come from the agent. GoldenIDE enforces a workspace path guard on every read and write.
 - `CoreRequest` is empty and the UI has no reply path, so file writes to open buffers use a `CoreNotification::AgentApplyEdit`, reads run in the dispatcher (`ProxyRequest::AgentReadFile`), writes to closed files go to disk in the proxy (`ProxyRequest::AgentWriteFile`).
 - Resolved: the ACP crate is runtime agnostic (no tokio), so it runs on a dedicated proxy thread with `futures::executor::block_on`. The proxy holds synced buffers, but inside the single-threaded dispatcher.
 - Default panel position: right side.
@@ -93,7 +93,7 @@ Append this section to the end of `docs/superpowers/specs/2026-09-24-agent-panel
 
 - [ ] **Step 2: Write the failing test**
 
-Create `lapce-rpc/src/agent.rs` containing only the test module first:
+Create `goldenide-rpc/src/agent.rs` containing only the test module first:
 
 ```rust
 #[cfg(test)]
@@ -136,16 +136,16 @@ mod tests {
 }
 ```
 
-Add `pub mod agent;` (alphabetical, before `pub mod buffer;`) to `lapce-rpc/src/lib.rs`.
+Add `pub mod agent;` (alphabetical, before `pub mod buffer;`) to `goldenide-rpc/src/lib.rs`.
 
 - [ ] **Step 3: Run test to verify it fails**
 
-Run: `cargo test -p lapce-rpc agent::`
+Run: `cargo test -p goldenide-rpc agent::`
 Expected: FAIL to compile, "cannot find type `AgentEvent`".
 
 - [ ] **Step 4: Write the implementation**
 
-Put this above the test module in `lapce-rpc/src/agent.rs`:
+Put this above the test module in `goldenide-rpc/src/agent.rs`:
 
 ```rust
 //! Types shared between the UI and the proxy for the AI agent (ACP) panel.
@@ -249,7 +249,7 @@ pub enum AgentEvent {
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run: `cargo test -p lapce-rpc agent::`
+Run: `cargo test -p goldenide-rpc agent::`
 Expected: PASS (2 tests).
 
 - [ ] **Step 6: Commit**
@@ -259,11 +259,11 @@ Append to `CHANGES.md`:
 ```markdown
 ## AI agent panel
 
-- Added `lapce_rpc::agent` with the shared types used by the agent panel (ACP client). Spec deltas from planning are recorded in the design spec.
+- Added `goldenide_rpc::agent` with the shared types used by the agent panel (ACP client). Spec deltas from planning are recorded in the design spec.
 ```
 
 ```bash
-git add lapce-rpc/src/agent.rs lapce-rpc/src/lib.rs docs/superpowers/specs/2026-09-24-agent-panel-design.md CHANGES.md
+git add goldenide-rpc/src/agent.rs goldenide-rpc/src/lib.rs docs/superpowers/specs/2026-09-24-agent-panel-design.md CHANGES.md
 git commit -m "feat(agent): add shared RPC types for the agent panel"
 ```
 
@@ -272,22 +272,22 @@ git commit -m "feat(agent): add shared RPC types for the agent panel"
 ### Task 2: Proxy dependencies and the permission broker
 
 **Files:**
-- Create: `lapce-proxy/src/agent/mod.rs` (only `pub mod permission;` for now), `lapce-proxy/src/agent/permission.rs`
-- Modify: `lapce-proxy/Cargo.toml`, `lapce-proxy/src/lib.rs`, `CHANGES.md`
+- Create: `goldenide-proxy/src/agent/mod.rs` (only `pub mod permission;` for now), `goldenide-proxy/src/agent/permission.rs`
+- Modify: `goldenide-proxy/Cargo.toml`, `goldenide-proxy/src/lib.rs`, `CHANGES.md`
 
 **Interfaces:**
 - Produces: `PermissionBroker::new() -> Self`; `register(&self) -> (AgentRequestId, futures::channel::oneshot::Receiver<Option<String>>)`; `reply(&self, id: AgentRequestId, option_id: Option<String>) -> bool`; `cancel_all(&self)`. A dropped sender (cancel) makes the receiver return `Err(Canceled)`, which the session treats as "cancelled".
 
 - [ ] **Step 1: Add the dependencies**
 
-In `lapce-proxy/Cargo.toml`, under `[dependencies]` (keep the alignment style, alphabetical among the plain crates):
+In `goldenide-proxy/Cargo.toml`, under `[dependencies]` (keep the alignment style, alphabetical among the plain crates):
 
 ```toml
 agent-client-protocol = "=2.2.0"
 futures               = "0.3"
 ```
 
-Add `pub mod agent;` to `lapce-proxy/src/lib.rs` next to the other `pub mod` lines, and create `lapce-proxy/src/agent/mod.rs`:
+Add `pub mod agent;` to `goldenide-proxy/src/lib.rs` next to the other `pub mod` lines, and create `goldenide-proxy/src/agent/mod.rs`:
 
 ```rust
 //! AI agent (ACP client) support.
@@ -295,12 +295,12 @@ Add `pub mod agent;` to `lapce-proxy/src/lib.rs` next to the other `pub mod` lin
 pub mod permission;
 ```
 
-Run: `cargo check -p lapce-proxy`
+Run: `cargo check -p goldenide-proxy`
 Expected: compiles (downloads the crate; if `cargo deny` is part of your flow, the crate is Apache-2.0).
 
 - [ ] **Step 2: Write the failing test**
 
-Create `lapce-proxy/src/agent/permission.rs` with the tests only:
+Create `goldenide-proxy/src/agent/permission.rs` with the tests only:
 
 ```rust
 #[cfg(test)]
@@ -353,7 +353,7 @@ mod tests {
 
 - [ ] **Step 3: Run test to verify it fails**
 
-Run: `cargo test -p lapce-proxy agent::permission`
+Run: `cargo test -p goldenide-proxy agent::permission`
 Expected: FAIL to compile, "cannot find type `PermissionBroker`".
 
 - [ ] **Step 4: Write the implementation**
@@ -369,7 +369,7 @@ use std::{
 };
 
 use futures::channel::oneshot;
-use lapce_rpc::agent::AgentRequestId;
+use goldenide_rpc::agent::AgentRequestId;
 use parking_lot::Mutex;
 
 /// The user's decision: `Some(option_id)` picks an option, `None` rejects.
@@ -413,15 +413,15 @@ impl PermissionBroker {
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run: `cargo test -p lapce-proxy agent::permission`
+Run: `cargo test -p goldenide-proxy agent::permission`
 Expected: PASS (5 tests).
 
 - [ ] **Step 6: Commit**
 
-Append to `CHANGES.md` under `## AI agent panel`: `- Added the ACP crate to lapce-proxy and a PermissionBroker for pending agent permission requests.`
+Append to `CHANGES.md` under `## AI agent panel`: `- Added the ACP crate to goldenide-proxy and a PermissionBroker for pending agent permission requests.`
 
 ```bash
-git add lapce-proxy/Cargo.toml Cargo.lock lapce-proxy/src/lib.rs lapce-proxy/src/agent CHANGES.md
+git add goldenide-proxy/Cargo.toml Cargo.lock goldenide-proxy/src/lib.rs goldenide-proxy/src/agent CHANGES.md
 git commit -m "feat(agent): add ACP dependency and permission broker to the proxy"
 ```
 
@@ -430,8 +430,8 @@ git commit -m "feat(agent): add ACP dependency and permission broker to the prox
 ### Task 3: Workspace path guard and line slicing
 
 **Files:**
-- Create: `lapce-proxy/src/agent/paths.rs`
-- Modify: `lapce-proxy/src/agent/mod.rs` (add `pub mod paths;`), `CHANGES.md`
+- Create: `goldenide-proxy/src/agent/paths.rs`
+- Modify: `goldenide-proxy/src/agent/mod.rs` (add `pub mod paths;`), `CHANGES.md`
 
 **Interfaces:**
 - Produces: `resolve_workspace_path(workspace: &Path, path: &Path) -> anyhow::Result<PathBuf>` (returns the normalized absolute path or an error); `slice_lines(content: &str, line: Option<u32>, limit: Option<u32>) -> String` (`line` is 1-based).
@@ -440,7 +440,7 @@ Security notes for this task (recorded design answers): the agent is untrusted i
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `lapce-proxy/src/agent/paths.rs` with tests only:
+Create `goldenide-proxy/src/agent/paths.rs` with tests only:
 
 ```rust
 #[cfg(test)]
@@ -452,7 +452,7 @@ mod tests {
     /// Creates a fresh temp directory unique to this test.
     fn temp_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir()
-            .join(format!("lapce-agent-paths-{}-{name}", std::process::id()));
+            .join(format!("goldenide-agent-paths-{}-{name}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
@@ -519,11 +519,11 @@ mod tests {
 }
 ```
 
-Add `pub mod paths;` to `lapce-proxy/src/agent/mod.rs`.
+Add `pub mod paths;` to `goldenide-proxy/src/agent/mod.rs`.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cargo test -p lapce-proxy agent::paths`
+Run: `cargo test -p goldenide-proxy agent::paths`
 Expected: FAIL to compile, "cannot find function `resolve_workspace_path`".
 
 - [ ] **Step 3: Write the implementation**
@@ -607,7 +607,7 @@ pub fn slice_lines(content: &str, line: Option<u32>, limit: Option<u32>) -> Stri
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo test -p lapce-proxy agent::paths`
+Run: `cargo test -p goldenide-proxy agent::paths`
 Expected: PASS (8 tests on Unix, 7 elsewhere).
 
 - [ ] **Step 5: Commit**
@@ -615,7 +615,7 @@ Expected: PASS (8 tests on Unix, 7 elsewhere).
 Append to `CHANGES.md`: `- Added the workspace path guard and line slicing used to serve agent file requests.`
 
 ```bash
-git add lapce-proxy/src/agent CHANGES.md
+git add goldenide-proxy/src/agent CHANGES.md
 git commit -m "feat(agent): add workspace path guard for agent file requests"
 ```
 
@@ -624,15 +624,15 @@ git commit -m "feat(agent): add workspace path guard for agent file requests"
 ### Task 4: Prompt builder
 
 **Files:**
-- Create: `lapce-proxy/src/agent/prompt.rs`
-- Modify: `lapce-proxy/src/agent/mod.rs` (add `pub mod prompt;`), `CHANGES.md`
+- Create: `goldenide-proxy/src/agent/prompt.rs`
+- Modify: `goldenide-proxy/src/agent/mod.rs` (add `pub mod prompt;`), `CHANGES.md`
 
 **Interfaces:**
 - Produces: `MAX_CONTEXT_BYTES: usize = 64_000`; `ResolvedContext { path: PathBuf, selection: Option<String>, content: Option<String> }`; `build_prompt_text(user_text: &str, contexts: &[ResolvedContext]) -> String`.
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `lapce-proxy/src/agent/prompt.rs` with tests only:
+Create `goldenide-proxy/src/agent/prompt.rs` with tests only:
 
 ```rust
 #[cfg(test)]
@@ -686,11 +686,11 @@ mod tests {
 }
 ```
 
-Add `pub mod prompt;` to `lapce-proxy/src/agent/mod.rs`.
+Add `pub mod prompt;` to `goldenide-proxy/src/agent/mod.rs`.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cargo test -p lapce-proxy agent::prompt`
+Run: `cargo test -p goldenide-proxy agent::prompt`
 Expected: FAIL to compile, "cannot find type `ResolvedContext`".
 
 - [ ] **Step 3: Write the implementation**
@@ -752,7 +752,7 @@ pub fn build_prompt_text(user_text: &str, contexts: &[ResolvedContext]) -> Strin
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo test -p lapce-proxy agent::prompt`
+Run: `cargo test -p goldenide-proxy agent::prompt`
 Expected: PASS (5 tests).
 
 - [ ] **Step 5: Commit**
@@ -760,7 +760,7 @@ Expected: PASS (5 tests).
 Append to `CHANGES.md`: `- Added the prompt builder that attaches selection or file context to the user message.`
 
 ```bash
-git add lapce-proxy/src/agent CHANGES.md
+git add goldenide-proxy/src/agent CHANGES.md
 git commit -m "feat(agent): add prompt builder with context truncation"
 ```
 
@@ -769,18 +769,18 @@ git commit -m "feat(agent): add prompt builder with context truncation"
 ### Task 5: ACP update mapping
 
 **Files:**
-- Create: `lapce-proxy/src/agent/mapping.rs`
-- Modify: `lapce-proxy/src/agent/mod.rs` (add `pub mod mapping;`), `CHANGES.md`
+- Create: `goldenide-proxy/src/agent/mapping.rs`
+- Modify: `goldenide-proxy/src/agent/mod.rs` (add `pub mod mapping;`), `CHANGES.md`
 
 **Interfaces:**
-- Consumes: `lapce_rpc::agent::{AgentEvent, AgentToolStatus, AgentPermissionOption, AgentPermissionKind}`.
+- Consumes: `goldenide_rpc::agent::{AgentEvent, AgentToolStatus, AgentPermissionOption, AgentPermissionKind}`.
 - Produces: `map_update(update: SessionUpdate) -> Option<AgentEvent>`; `map_permission_options(req: &RequestPermissionRequest) -> Vec<AgentPermissionOption>`; `permission_title(req: &RequestPermissionRequest) -> String`.
 
 This code was compile-checked against `agent-client-protocol` 2.2.0 while writing the plan.
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `lapce-proxy/src/agent/mapping.rs` with tests only:
+Create `goldenide-proxy/src/agent/mapping.rs` with tests only:
 
 ```rust
 #[cfg(test)]
@@ -866,11 +866,11 @@ mod tests {
 }
 ```
 
-Add `pub mod mapping;` to `lapce-proxy/src/agent/mod.rs`.
+Add `pub mod mapping;` to `goldenide-proxy/src/agent/mod.rs`.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cargo test -p lapce-proxy agent::mapping`
+Run: `cargo test -p goldenide-proxy agent::mapping`
 Expected: FAIL to compile, "cannot find function `map_update`".
 
 - [ ] **Step 3: Write the implementation**
@@ -882,7 +882,7 @@ use agent_client_protocol::schema::v1::{
     ContentBlock, PermissionOptionKind, RequestPermissionRequest, SessionUpdate,
     ToolCall, ToolCallStatus, ToolCallUpdate,
 };
-use lapce_rpc::agent::{
+use goldenide_rpc::agent::{
     AgentEvent, AgentPermissionKind, AgentPermissionOption, AgentToolStatus,
 };
 
@@ -975,7 +975,7 @@ pub fn permission_title(req: &RequestPermissionRequest) -> String {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo test -p lapce-proxy agent::mapping`
+Run: `cargo test -p goldenide-proxy agent::mapping`
 Expected: PASS (5 tests). If a field access such as `option.kind` is not `Copy`, add `.clone()`; the type shapes were verified when this plan was written.
 
 - [ ] **Step 5: Commit**
@@ -983,7 +983,7 @@ Expected: PASS (5 tests). If a field access such as `option.kind` is not `Copy`,
 Append to `CHANGES.md`: `- Added mapping from ACP session updates and permission requests to UI events.`
 
 ```bash
-git add lapce-proxy/src/agent CHANGES.md
+git add goldenide-proxy/src/agent CHANGES.md
 git commit -m "feat(agent): map ACP updates to UI events"
 ```
 
@@ -992,11 +992,11 @@ git commit -m "feat(agent): map ACP updates to UI events"
 ### Task 6: File read and write plumbing through the dispatcher
 
 **Files:**
-- Create: `lapce-proxy/src/agent/fs.rs`
-- Modify: `lapce-proxy/src/agent/mod.rs` (add `pub mod fs;`), `lapce-rpc/src/proxy.rs`, `lapce-rpc/src/core.rs`, `lapce-proxy/src/dispatch.rs`, `CHANGES.md`
+- Create: `goldenide-proxy/src/agent/fs.rs`
+- Modify: `goldenide-proxy/src/agent/mod.rs` (add `pub mod fs;`), `goldenide-rpc/src/proxy.rs`, `goldenide-rpc/src/core.rs`, `goldenide-proxy/src/dispatch.rs`, `CHANGES.md`
 
 **Interfaces:**
-- Consumes: `lapce_proxy::buffer::Buffer` (field `rope: Rope`), `CoreRpcHandler::notification`.
+- Consumes: `goldenide_proxy::buffer::Buffer` (field `rope: Rope`), `CoreRpcHandler::notification`.
 - Produces:
   - `agent::fs::read_text(buffers: &HashMap<PathBuf, Buffer>, path: &Path) -> anyhow::Result<String>`
   - `agent::fs::write_text(buffers: &HashMap<PathBuf, Buffer>, core_rpc: &CoreRpcHandler, path: &Path, content: &str) -> anyhow::Result<()>`
@@ -1006,14 +1006,14 @@ git commit -m "feat(agent): map ACP updates to UI events"
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `lapce-proxy/src/agent/fs.rs` with tests only:
+Create `goldenide-proxy/src/agent/fs.rs` with tests only:
 
 ```rust
 #[cfg(test)]
 mod tests {
     use std::{collections::HashMap, fs, path::PathBuf};
 
-    use lapce_rpc::{
+    use goldenide_rpc::{
         buffer::BufferId,
         core::{CoreNotification, CoreRpc, CoreRpcHandler},
     };
@@ -1025,7 +1025,7 @@ mod tests {
     /// Creates a fresh temp directory unique to this test.
     fn temp_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir()
-            .join(format!("lapce-agent-fs-{}-{name}", std::process::id()));
+            .join(format!("goldenide-agent-fs-{}-{name}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
@@ -1097,11 +1097,11 @@ mod tests {
 }
 ```
 
-Add `pub mod fs;` to `lapce-proxy/src/agent/mod.rs`.
+Add `pub mod fs;` to `goldenide-proxy/src/agent/mod.rs`.
 
 - [ ] **Step 2: Add the protocol variants**
 
-In `lapce-rpc/src/core.rs`, inside `enum CoreNotification`, add:
+In `goldenide-rpc/src/core.rs`, inside `enum CoreNotification`, add:
 
 ```rust
     /// The agent wrote a file that is open in the editor: apply the new content
@@ -1112,7 +1112,7 @@ In `lapce-rpc/src/core.rs`, inside `enum CoreNotification`, add:
     },
 ```
 
-In `lapce-rpc/src/proxy.rs`:
+In `goldenide-rpc/src/proxy.rs`:
 
 - inside `enum ProxyRequest` add:
 
@@ -1170,12 +1170,12 @@ In `lapce-rpc/src/proxy.rs`:
 
 - [ ] **Step 3: Run tests to verify they fail**
 
-Run: `cargo test -p lapce-proxy agent::fs`
+Run: `cargo test -p goldenide-proxy agent::fs`
 Expected: FAIL to compile ("cannot find function `read_text`", and non-exhaustive match errors in `dispatch.rs`).
 
 - [ ] **Step 4: Write the implementation**
 
-Put above the test module in `lapce-proxy/src/agent/fs.rs`:
+Put above the test module in `goldenide-proxy/src/agent/fs.rs`:
 
 ```rust
 //! File access for the agent, backed by the dispatcher's synced buffers.
@@ -1187,7 +1187,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use lapce_rpc::core::{CoreNotification, CoreRpcHandler};
+use goldenide_rpc::core::{CoreNotification, CoreRpcHandler};
 
 use crate::buffer::Buffer;
 
@@ -1227,7 +1227,7 @@ pub fn write_text(
 }
 ```
 
-In `lapce-proxy/src/dispatch.rs`, inside `handle_request`'s `match rpc` (next to `NewBuffer`), add:
+In `goldenide-proxy/src/dispatch.rs`, inside `handle_request`'s `match rpc` (next to `NewBuffer`), add:
 
 ```rust
             AgentReadFile { path } => {
@@ -1255,19 +1255,19 @@ In `lapce-proxy/src/dispatch.rs`, inside `handle_request`'s `match rpc` (next to
             }
 ```
 
-If `RpcError` is not already imported in `dispatch.rs`, add it to the existing `lapce_rpc::{...}` import.
+If `RpcError` is not already imported in `dispatch.rs`, add it to the existing `goldenide_rpc::{...}` import.
 
 - [ ] **Step 5: Run tests and build to verify they pass**
 
-Run: `cargo test -p lapce-proxy agent::fs && cargo check -p lapce-proxy -p lapce-rpc`
-Expected: PASS (5 tests), then a clean check. `lapce-app` will not compile yet if its `handle_core_notification` match has no wildcard: run `cargo check -p lapce-app` and, if it complains about `AgentApplyEdit`, add the arm `CoreNotification::AgentApplyEdit { .. } => {}` with the comment `// Wired to the agent state in Task 8.` (this arm is replaced in Task 8).
+Run: `cargo test -p goldenide-proxy agent::fs && cargo check -p goldenide-proxy -p goldenide-rpc`
+Expected: PASS (5 tests), then a clean check. `goldenide-app` will not compile yet if its `handle_core_notification` match has no wildcard: run `cargo check -p goldenide-app` and, if it complains about `AgentApplyEdit`, add the arm `CoreNotification::AgentApplyEdit { .. } => {}` with the comment `// Wired to the agent state in Task 8.` (this arm is replaced in Task 8).
 
 - [ ] **Step 6: Commit**
 
 Append to `CHANGES.md`: `- Added ProxyRequest::AgentReadFile/AgentWriteFile and CoreNotification::AgentApplyEdit so the agent reads unsaved buffers and edits open files through the UI.`
 
 ```bash
-git add lapce-proxy/src lapce-rpc/src lapce-app/src/window_tab.rs CHANGES.md
+git add goldenide-proxy/src goldenide-rpc/src goldenide-app/src/window_tab.rs CHANGES.md
 git commit -m "feat(agent): route agent file access through the dispatcher"
 ```
 
@@ -1276,20 +1276,20 @@ git commit -m "feat(agent): route agent file access through the dispatcher"
 ### Task 7: UI configuration and agent state
 
 **Files:**
-- Create: `lapce-app/src/config/agent.rs`, `lapce-app/src/agent.rs`
-- Modify: `lapce-app/src/config.rs`, `lapce-app/src/lib.rs`, `defaults/settings.toml`, `CHANGES.md`
+- Create: `goldenide-app/src/config/agent.rs`, `goldenide-app/src/agent.rs`
+- Modify: `goldenide-app/src/config.rs`, `goldenide-app/src/lib.rs`, `defaults/settings.toml`, `CHANGES.md`
 
 **Interfaces:**
-- Consumes: `lapce_rpc::agent::*` from Task 1.
+- Consumes: `goldenide_rpc::agent::*` from Task 1.
 - Produces:
-  - `AgentConfig { default_server: String, servers: HashMap<String, AgentServerSetting> }` with `resolve(&self) -> Result<lapce_rpc::agent::AgentServerConfig, String>` and field `LapceConfig::agent`.
+  - `AgentConfig { default_server: String, servers: HashMap<String, AgentServerSetting> }` with `resolve(&self) -> Result<goldenide_rpc::agent::AgentServerConfig, String>` and field `GoldenIdeConfig::agent`.
   - `AgentItem { User(String), Assistant(String), Thought(String), Tool { id, title, status }, Error(String) }` with `render_key(&self) -> u64`.
   - `PendingPermission { request_id: AgentRequestId, title: String, options: Vec<AgentPermissionOption> }`.
   - `AgentState { items: im::Vector<AgentItem>, status: AgentStatus, busy: bool, pending: Option<PendingPermission> }` with `push_user(&mut self, text: &str)`, `apply(&mut self, event: &AgentEvent)`, `take_pending(&mut self) -> Option<PendingPermission>`.
 
 - [ ] **Step 1: Write the failing tests for the config**
 
-Create `lapce-app/src/config/agent.rs` with tests only:
+Create `goldenide-app/src/config/agent.rs` with tests only:
 
 ```rust
 #[cfg(test)]
@@ -1331,12 +1331,12 @@ mod tests {
 }
 ```
 
-Add `pub mod agent;` to the `pub mod` list in `lapce-app/src/config.rs` (next to `pub mod terminal;`).
+Add `pub mod agent;` to the `pub mod` list in `goldenide-app/src/config.rs` (next to `pub mod terminal;`).
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cargo test -p lapce-app config::agent`
-Expected: FAIL to compile, "cannot find type `AgentConfig`". (The first build of `lapce-app` is slow.)
+Run: `cargo test -p goldenide-app config::agent`
+Expected: FAIL to compile, "cannot find type `AgentConfig`". (The first build of `goldenide-app` is slow.)
 
 - [ ] **Step 3: Write the config implementation**
 
@@ -1375,7 +1375,7 @@ pub struct AgentConfig {
 impl AgentConfig {
     /// Resolves the default server into the launch config sent to the proxy.
     /// Returns a user-facing message when the setting is unusable.
-    pub fn resolve(&self) -> Result<lapce_rpc::agent::AgentServerConfig, String> {
+    pub fn resolve(&self) -> Result<goldenide_rpc::agent::AgentServerConfig, String> {
         let Some(server) = self.servers.get(&self.default_server) else {
             let mut names: Vec<_> = self.servers.keys().cloned().collect();
             names.sort();
@@ -1391,7 +1391,7 @@ impl AgentConfig {
                 self.default_server
             ));
         }
-        Ok(lapce_rpc::agent::AgentServerConfig {
+        Ok(goldenide_rpc::agent::AgentServerConfig {
             command: server.command.clone(),
             args: server.arguments.clone(),
             env: server.environment.clone(),
@@ -1400,9 +1400,9 @@ impl AgentConfig {
 }
 ```
 
-In `lapce-app/src/config.rs`:
+In `goldenide-app/src/config.rs`:
 - add `agent::AgentConfig,` to the `use` list next to `terminal::TerminalConfig,`
-- add the field `pub agent: AgentConfig,` to `LapceConfig` right after `pub terminal: TerminalConfig,`
+- add the field `pub agent: AgentConfig,` to `GoldenIdeConfig` right after `pub terminal: TerminalConfig,`
 - in the config update function, after `self.terminal.get_indexed_colors();` add `self.agent = new.agent;`
 
 Append to `defaults/settings.toml`:
@@ -1422,17 +1422,17 @@ arguments = ["-y", "pi-acp"]
 
 - [ ] **Step 4: Run the config tests**
 
-Run: `cargo test -p lapce-app config::agent`
-Expected: PASS (3 tests). Then `cargo test -p lapce-app config::` to confirm existing config tests still pass.
+Run: `cargo test -p goldenide-app config::agent`
+Expected: PASS (3 tests). Then `cargo test -p goldenide-app config::` to confirm existing config tests still pass.
 
 - [ ] **Step 5: Write the failing tests for the agent state**
 
-Create `lapce-app/src/agent.rs` with tests only:
+Create `goldenide-app/src/agent.rs` with tests only:
 
 ```rust
 #[cfg(test)]
 mod tests {
-    use lapce_rpc::agent::{AgentStatus, AgentToolStatus};
+    use goldenide_rpc::agent::{AgentStatus, AgentToolStatus};
 
     use super::*;
 
@@ -1540,23 +1540,23 @@ mod tests {
 }
 ```
 
-Add `pub mod agent;` to `lapce-app/src/lib.rs` (alphabetical).
+Add `pub mod agent;` to `goldenide-app/src/lib.rs` (alphabetical).
 
 - [ ] **Step 6: Run tests to verify they fail**
 
-Run: `cargo test -p lapce-app agent::tests`
+Run: `cargo test -p goldenide-app agent::tests`
 Expected: FAIL to compile, "cannot find type `AgentState`".
 
 - [ ] **Step 7: Write the state implementation**
 
-Above the test module in `lapce-app/src/agent.rs`:
+Above the test module in `goldenide-app/src/agent.rs`:
 
 ```rust
 //! UI state of the AI agent panel.
 
 use std::hash::{Hash, Hasher};
 
-use lapce_rpc::agent::{
+use goldenide_rpc::agent::{
     AgentEvent, AgentPermissionOption, AgentRequestId, AgentStatus, AgentToolStatus,
 };
 
@@ -1728,7 +1728,7 @@ impl AgentState {
 
 - [ ] **Step 8: Run tests to verify they pass**
 
-Run: `cargo test -p lapce-app agent::tests`
+Run: `cargo test -p goldenide-app agent::tests`
 Expected: PASS (7 tests). Note: `AgentToolStatus` must be `Copy` (it is, from Task 1) for `*status as u8`; if the cast is rejected, derive the key from `format!("{status:?}")` instead.
 
 - [ ] **Step 9: Commit**
@@ -1736,7 +1736,7 @@ Expected: PASS (7 tests). Note: `AgentToolStatus` must be `Copy` (it is, from Ta
 Append to `CHANGES.md`: `- Added [agent] settings (default-server, servers) and the AgentState transcript model for the panel.`
 
 ```bash
-git add lapce-app/src/agent.rs lapce-app/src/lib.rs lapce-app/src/config.rs lapce-app/src/config/agent.rs defaults/settings.toml CHANGES.md
+git add goldenide-app/src/agent.rs goldenide-app/src/lib.rs goldenide-app/src/config.rs goldenide-app/src/config/agent.rs defaults/settings.toml CHANGES.md
 git commit -m "feat(agent): add agent settings and panel state model"
 ```
 
@@ -1745,8 +1745,8 @@ git commit -m "feat(agent): add agent settings and panel state model"
 ### Task 8: Session driver, manager and protocol wiring
 
 **Files:**
-- Create: `lapce-proxy/src/agent/session.rs`, `lapce-proxy/examples/mock_acp_agent.rs`, `lapce-proxy/tests/agent_session.rs`
-- Modify: `lapce-proxy/src/agent/mod.rs`, `lapce-rpc/src/proxy.rs`, `lapce-rpc/src/core.rs`, `lapce-proxy/src/dispatch.rs`, `lapce-app/src/window_tab.rs`, `lapce-app/src/agent.rs` (add `AgentData`), `CHANGES.md`
+- Create: `goldenide-proxy/src/agent/session.rs`, `goldenide-proxy/examples/mock_acp_agent.rs`, `goldenide-proxy/tests/agent_session.rs`
+- Modify: `goldenide-proxy/src/agent/mod.rs`, `goldenide-rpc/src/proxy.rs`, `goldenide-rpc/src/core.rs`, `goldenide-proxy/src/dispatch.rs`, `goldenide-app/src/window_tab.rs`, `goldenide-app/src/agent.rs` (add `AgentData`), `CHANGES.md`
 
 **Interfaces:**
 - Consumes: everything from Tasks 1-7.
@@ -1759,7 +1759,7 @@ git commit -m "feat(agent): add agent settings and panel state model"
 
 - [ ] **Step 1: Add the protocol variants and RPC helpers**
 
-In `lapce-rpc/src/proxy.rs`, add to the imports `use crate::agent::{AgentContext, AgentRequestId, AgentServerConfig};` and inside `enum ProxyNotification`:
+In `goldenide-rpc/src/proxy.rs`, add to the imports `use crate::agent::{AgentContext, AgentRequestId, AgentServerConfig};` and inside `enum ProxyNotification`:
 
 ```rust
     AgentStart {
@@ -1813,7 +1813,7 @@ Inside `impl ProxyRpcHandler`:
     }
 ```
 
-In `lapce-rpc/src/core.rs` add `agent::AgentEvent,` to the crate imports and inside `enum CoreNotification`:
+In `goldenide-rpc/src/core.rs` add `agent::AgentEvent,` to the crate imports and inside `enum CoreNotification`:
 
 ```rust
     /// An event from the running agent session.
@@ -1824,7 +1824,7 @@ In `lapce-rpc/src/core.rs` add `agent::AgentEvent,` to the crate imports and ins
 
 - [ ] **Step 2: Write the mock agent**
 
-Add to `lapce-proxy/Cargo.toml`:
+Add to `goldenide-proxy/Cargo.toml`:
 
 ```toml
 [[example]]
@@ -1832,7 +1832,7 @@ name = "mock_acp_agent"
 path = "examples/mock_acp_agent.rs"
 ```
 
-Create `lapce-proxy/examples/mock_acp_agent.rs` (compile-checked against the crate):
+Create `goldenide-proxy/examples/mock_acp_agent.rs` (compile-checked against the crate):
 
 ```rust
 //! Mock ACP agent used by the integration tests. On every prompt it streams a
@@ -1929,7 +1929,7 @@ fn main() -> Result<()> {
 
 - [ ] **Step 3: Write the failing integration test**
 
-Create `lapce-proxy/tests/agent_session.rs`:
+Create `goldenide-proxy/tests/agent_session.rs`:
 
 ```rust
 //! Integration test: a real `AgentManager` talking to the mock ACP agent.
@@ -1940,8 +1940,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use lapce_proxy::agent::AgentManager;
-use lapce_rpc::{
+use goldenide_proxy::agent::AgentManager;
+use goldenide_rpc::{
     RequestId, RpcError,
     agent::{AgentEvent, AgentServerConfig, AgentStatus},
     core::{CoreNotification, CoreRpc, CoreRpcHandler},
@@ -2180,12 +2180,12 @@ fn missing_agent_binary_reports_disconnected_with_a_reason() {
 
 - [ ] **Step 4: Run the tests to verify they fail**
 
-Run: `cargo test -p lapce-proxy --test agent_session`
-Expected: FAIL to compile, "unresolved import `lapce_proxy::agent::AgentManager`".
+Run: `cargo test -p goldenide-proxy --test agent_session`
+Expected: FAIL to compile, "unresolved import `goldenide_proxy::agent::AgentManager`".
 
 - [ ] **Step 5: Write the session driver**
 
-Create `lapce-proxy/src/agent/session.rs` (the ACP wiring was compile-checked against the crate):
+Create `goldenide-proxy/src/agent/session.rs` (the ACP wiring was compile-checked against the crate):
 
 ```rust
 //! One ACP client session: spawns the agent, serves its requests, runs prompts.
@@ -2208,7 +2208,7 @@ use agent_client_protocol::{
 };
 use anyhow::{Result, anyhow};
 use futures::{FutureExt, StreamExt, channel::mpsc, select};
-use lapce_rpc::{
+use goldenide_rpc::{
     agent::{AgentContext, AgentEvent, AgentServerConfig, AgentStatus},
     core::{CoreNotification, CoreRpcHandler},
     proxy::ProxyRpcHandler,
@@ -2431,7 +2431,7 @@ pub async fn run_session(
 
 - [ ] **Step 6: Write the manager**
 
-Replace `lapce-proxy/src/agent/mod.rs` with:
+Replace `goldenide-proxy/src/agent/mod.rs` with:
 
 ```rust
 //! AI agent (ACP client) support.
@@ -2446,7 +2446,7 @@ pub mod session;
 use std::{path::PathBuf, sync::Arc};
 
 use futures::channel::mpsc;
-use lapce_rpc::{
+use goldenide_rpc::{
     agent::{AgentContext, AgentEvent, AgentRequestId, AgentServerConfig, AgentStatus},
     core::{CoreNotification, CoreRpcHandler},
     proxy::ProxyRpcHandler,
@@ -2555,7 +2555,7 @@ impl AgentManager {
 
 - [ ] **Step 7: Wire the dispatcher**
 
-In `lapce-proxy/src/dispatch.rs`:
+In `goldenide-proxy/src/dispatch.rs`:
 - add a field `agent: crate::agent::AgentManager,` to `Dispatcher`
 - in `Dispatcher::new` (near line 1212), build it before the `Self { .. }` literal, because `core_rpc` and `proxy_rpc` are moved into the literal: add `let agent = crate::agent::AgentManager::new(core_rpc.clone(), proxy_rpc.clone());` right after the `file_watcher` line, and add `agent,` to the literal
 - in `handle_notification`'s `match`, inside the `Shutdown {}` arm add `self.agent.stop();` as the first statement, and add these arms next to it:
@@ -2583,14 +2583,14 @@ In `lapce-proxy/src/dispatch.rs`:
 
 - [ ] **Step 8: Run the integration tests**
 
-Run: `cargo test -p lapce-proxy --test agent_session -- --test-threads=1`
-Expected: PASS (5 tests). If the mock path is not found, run `cargo build -p lapce-proxy --example mock_acp_agent` first (cargo builds examples for `cargo test`, but a filtered run may skip it). If `missing_agent_binary...` hangs, the spawn error is not surfacing through `run_session`'s result; in that case log the error and return `Err` from `connect_with` before the handshake (do not add a retry).
+Run: `cargo test -p goldenide-proxy --test agent_session -- --test-threads=1`
+Expected: PASS (5 tests). If the mock path is not found, run `cargo build -p goldenide-proxy --example mock_acp_agent` first (cargo builds examples for `cargo test`, but a filtered run may skip it). If `missing_agent_binary...` hangs, the spawn error is not surfacing through `run_session`'s result; in that case log the error and return `Err` from `connect_with` before the handshake (do not add a retry).
 
-Then run `cargo test -p lapce-proxy` to confirm all unit tests still pass.
+Then run `cargo test -p goldenide-proxy` to confirm all unit tests still pass.
 
 - [ ] **Step 9: Add `AgentData` and the UI arms**
 
-In `lapce-app/src/agent.rs`, above the tests, add `AgentData` (imports at the top of the file: `use std::{path::Path, rc::Rc};`, `use floem::reactive::{RwSignal, Scope, SignalGet, SignalUpdate, SignalWith};`, `use lapce_core::{buffer::EditType, selection::Selection};`, `use crate::{main_split::MainSplitData, window_tab::CommonData};`):
+In `goldenide-app/src/agent.rs`, above the tests, add `AgentData` (imports at the top of the file: `use std::{path::Path, rc::Rc};`, `use floem::reactive::{RwSignal, Scope, SignalGet, SignalUpdate, SignalWith};`, `use goldenide_core::{buffer::EditType, selection::Selection};`, `use crate::{main_split::MainSplitData, window_tab::CommonData};`):
 
 ```rust
 /// Reactive wrapper around [`AgentState`] plus the pieces needed to edit buffers.
@@ -2634,7 +2634,7 @@ impl AgentData {
 }
 ```
 
-Create it in `WindowTabData::new` right after the `plugin` is created (near `lapce-app/src/window_tab.rs:515`): `let agent = AgentData::new(cx, main_split.clone(), common.clone());`, add the field `pub agent: AgentData,` to `WindowTabData` next to `pub plugin: PluginData,`, and add `agent,` to the struct construction. In `handle_core_notification` replace the temporary `AgentApplyEdit` arm from Task 6 (if you added one) and add:
+Create it in `WindowTabData::new` right after the `plugin` is created (near `goldenide-app/src/window_tab.rs:515`): `let agent = AgentData::new(cx, main_split.clone(), common.clone());`, add the field `pub agent: AgentData,` to `WindowTabData` next to `pub plugin: PluginData,`, and add `agent,` to the struct construction. In `handle_core_notification` replace the temporary `AgentApplyEdit` arm from Task 6 (if you added one) and add:
 
 ```rust
             CoreNotification::AgentEvent { event } => {
@@ -2645,11 +2645,11 @@ Create it in `WindowTabData::new` right after the `plugin` is created (near `lap
             }
 ```
 
-Fix import paths as the compiler directs (`Selection` is `lapce_core::selection::Selection`, `EditType` is `lapce_core::buffer::EditType`, `Buffer::len` comes from the `BufferContent`/rope-text trait already used in `doc.rs`).
+Fix import paths as the compiler directs (`Selection` is `goldenide_core::selection::Selection`, `EditType` is `goldenide_core::buffer::EditType`, `Buffer::len` comes from the `BufferContent`/rope-text trait already used in `doc.rs`).
 
 - [ ] **Step 10: Build and run all touched tests**
 
-Run: `cargo check --workspace && cargo test -p lapce-rpc -p lapce-proxy -p lapce-app`
+Run: `cargo check --workspace && cargo test -p goldenide-rpc -p goldenide-proxy -p goldenide-app`
 Expected: clean build and all tests pass.
 
 - [ ] **Step 11: Commit**
@@ -2657,7 +2657,7 @@ Expected: clean build and all tests pass.
 Append to `CHANGES.md`: `- Added the ACP session driver (AgentManager), the mock agent integration tests, and the proxy/UI protocol wiring. Terminal capability is not advertised in v1.`
 
 ```bash
-git add lapce-proxy lapce-rpc lapce-app/src/agent.rs lapce-app/src/window_tab.rs Cargo.lock CHANGES.md
+git add goldenide-proxy goldenide-rpc goldenide-app/src/agent.rs goldenide-app/src/window_tab.rs Cargo.lock CHANGES.md
 git commit -m "feat(agent): add ACP session driver and protocol wiring"
 ```
 
@@ -2666,14 +2666,14 @@ git commit -m "feat(agent): add ACP session driver and protocol wiring"
 ### Task 9: The panel
 
 **Files:**
-- Create: `lapce-app/src/panel/agent_view.rs`, `icons/codicons/agent.svg`
-- Modify: `lapce-app/src/panel/{kind,mod,data,view}.rs`, `lapce-app/src/config/icon.rs`, `defaults/icon-theme.toml`, `lapce-app/src/{command,window_tab,doc,agent}.rs`, `CHANGES.md`
+- Create: `goldenide-app/src/panel/agent_view.rs`, `icons/codicons/agent.svg`
+- Modify: `goldenide-app/src/panel/{kind,mod,data,view}.rs`, `goldenide-app/src/config/icon.rs`, `defaults/icon-theme.toml`, `goldenide-app/src/{command,window_tab,doc,agent}.rs`, `CHANGES.md`
 
 **Interfaces:**
-- Consumes: `AgentData`, `AgentState`, `AgentItem`, `PendingPermission`, `ProxyRpcHandler::agent_*`, `LapceConfig::agent.resolve()`.
+- Consumes: `AgentData`, `AgentState`, `AgentItem`, `PendingPermission`, `ProxyRpcHandler::agent_*`, `GoldenIdeConfig::agent.resolve()`.
 - Produces: `PanelKind::Agent` (default position `RightTop`, focusable), `PanelSection::Agent`, `agent_panel(window_tab_data, position) -> impl View`, `AgentData::{input, send_input, cancel, reply_permission, restart}`, commands `toggle_agent_visual` and `toggle_agent_focus`.
 
-This task is UI code that follows `lapce-app/src/panel/problem_view.rs` and `plugin_view.rs` (search input). Rust's exhaustive matches drive the wiring: after adding `PanelKind::Agent`, run `cargo check -p lapce-app` and fix each non-exhaustive match, using the guidance below. Import paths that the compiler flags are expected.
+This task is UI code that follows `goldenide-app/src/panel/problem_view.rs` and `plugin_view.rs` (search input). Rust's exhaustive matches drive the wiring: after adding `PanelKind::Agent`, run `cargo check -p goldenide-app` and fix each non-exhaustive match, using the guidance below. Import paths that the compiler flags are expected.
 
 - [ ] **Step 1: Add the icon**
 
@@ -2683,22 +2683,22 @@ Find the icon folder: `find icons -name source-control.svg` (it is `icons/codico
 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M2 3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H8.4L5 14v-3H3a1 1 0 0 1-1-1V3zm1 0v7h3v1.9L7.9 10H13V3H3zm2 2h6v1H5V5zm0 2h4v1H5V7z"/></svg>
 ```
 
-Add to `lapce-app/src/config/icon.rs` next to `SCM`: `pub const AGENT: &'static str = "agent";` and to `defaults/icon-theme.toml` next to the `scm.icon` line: `"agent" = "agent.svg"`. Confirm `icon-theme.toml` entries in the same table use plain names like `"file_explorer" = "files.svg"` (they do).
+Add to `goldenide-app/src/config/icon.rs` next to `SCM`: `pub const AGENT: &'static str = "agent";` and to `defaults/icon-theme.toml` next to the `scm.icon` line: `"agent" = "agent.svg"`. Confirm `icon-theme.toml` entries in the same table use plain names like `"file_explorer" = "files.svg"` (they do).
 
 - [ ] **Step 2: Register the panel kind**
 
-In `lapce-app/src/panel/kind.rs`:
+In `goldenide-app/src/panel/kind.rs`:
 - add `Agent,` to `enum PanelKind`
-- `svg_name`: `PanelKind::Agent => LapceIcons::AGENT,`
+- `svg_name`: `PanelKind::Agent => GoldenIdeIcons::AGENT,`
 - `default_position`: `PanelKind::Agent => PanelPosition::RightTop,`
 
-In `lapce-app/src/panel/data.rs`: in `default_panel_order`, change the `RightTop` entry to `im::vector![PanelKind::Agent, PanelKind::DocumentSymbol,]`, and add `Agent` to `enum PanelSection` and to wherever `PanelSection` defaults are initialized (search for `PanelSection::Problem` / `PanelSection::Error` and follow the pattern; default open = `true`). Existing users' saved panel order gets the new kind appended automatically by `LapceDb::get_panel_orders`.
+In `goldenide-app/src/panel/data.rs`: in `default_panel_order`, change the `RightTop` entry to `im::vector![PanelKind::Agent, PanelKind::DocumentSymbol,]`, and add `Agent` to `enum PanelSection` and to wherever `PanelSection` defaults are initialized (search for `PanelSection::Problem` / `PanelSection::Error` and follow the pattern; default open = `true`). Existing users' saved panel order gets the new kind appended automatically by `GoldenIdeDb::get_panel_orders`.
 
-In `lapce-app/src/panel/mod.rs` add `pub mod agent_view;`.
+In `goldenide-app/src/panel/mod.rs` add `pub mod agent_view;`.
 
 - [ ] **Step 3: Input, send, cancel and permission handling in `AgentData`**
 
-In `lapce-app/src/agent.rs` extend `AgentData` with an input editor and actions. Add the field `pub input: EditorData,` (import `crate::editor::EditorData`), create it in `AgentData::new` with `main_split.editors.make_local(cx, common.clone())`, then add these methods:
+In `goldenide-app/src/agent.rs` extend `AgentData` with an input editor and actions. Add the field `pub input: EditorData,` (import `crate::editor::EditorData`), create it in `AgentData::new` with `main_split.editors.make_local(cx, common.clone())`, then add these methods:
 
 ```rust
     /// Reads and clears the input box. Returns `None` when it only has whitespace.
@@ -2778,7 +2778,7 @@ In `lapce-app/src/agent.rs` extend `AgentData` with an input editor and actions.
     }
 ```
 
-Implement `KeyPressFocus` for `AgentData` by copying the `impl KeyPressFocus for PluginData` block from `lapce-app/src/plugin.rs:112` and changing: `query_editor` to `self.input`, and the `InsertNewLine` arm to send instead of ignoring it:
+Implement `KeyPressFocus` for `AgentData` by copying the `impl KeyPressFocus for PluginData` block from `goldenide-app/src/plugin.rs:112` and changing: `query_editor` to `self.input`, and the `InsertNewLine` arm to send instead of ignoring it:
 
 ```rust
                     CommandKind::Edit(EditCommand::InsertNewLine) => {
@@ -2791,7 +2791,7 @@ so Enter sends the prompt. In `receive_char` forward to `self.input.receive_char
 
 - [ ] **Step 4: The view**
 
-Create `lapce-app/src/panel/agent_view.rs`. Use the structure below; use `LapceColor` values that exist (`EDITOR_FOREGROUND`, `LAPCE_BORDER`, `EDITOR_DIM`, and `LAPCE_ERROR` if present, else `EDITOR_FOREGROUND`). The compiler will point out any import that differs:
+Create `goldenide-app/src/panel/agent_view.rs`. Use the structure below; use `GoldenIdeColor` values that exist (`EDITOR_FOREGROUND`, `GOLDENIDE_BORDER`, `EDITOR_DIM`, and `GOLDENIDE_ERROR` if present, else `EDITOR_FOREGROUND`). The compiler will point out any import that differs:
 
 ```rust
 //! The AI agent panel: transcript, permission prompt, and input box.
@@ -2804,12 +2804,12 @@ use floem::{
     style::CursorStyle,
     views::{Decorators, container, dyn_stack, label, scroll, stack},
 };
-use lapce_rpc::agent::AgentToolStatus;
+use goldenide_rpc::agent::AgentToolStatus;
 
 use super::{data::PanelSection, position::PanelPosition, view::PanelBuilder};
 use crate::{
     agent::{AgentData, AgentItem},
-    config::color::LapceColor,
+    config::color::GoldenIdeColor,
     text_input::TextInputBuilder,
     window_tab::{Focus, WindowTabData},
 };
@@ -2849,7 +2849,7 @@ fn button(
                 .margin_right(6.0)
                 .border(1.0)
                 .border_radius(4.0)
-                .border_color(config.color(LapceColor::LAPCE_BORDER))
+                .border_color(config.color(GoldenIdeColor::GOLDENIDE_BORDER))
                 .cursor(CursorStyle::Pointer)
         })
 }
@@ -2875,7 +2875,7 @@ fn item_view(window_tab_data: Rc<WindowTabData>, item: AgentItem) -> impl View {
     stack((
         label(move || prefix.to_string()).style(move |s| {
             s.font_bold()
-                .color(config.get().color(LapceColor::EDITOR_DIM))
+                .color(config.get().color(GoldenIdeColor::EDITOR_DIM))
         }),
         label(move || text.clone()).style(|s| s.min_width(0.0).flex_grow(1.0)),
     ))
@@ -2922,7 +2922,7 @@ fn permission_bar(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl 
                     .width_pct(100.0)
                     .padding(8.0)
                     .border_top(1.0)
-                    .border_color(config.get().color(LapceColor::LAPCE_BORDER))
+                    .border_color(config.get().color(GoldenIdeColor::GOLDENIDE_BORDER))
             })
         },
     )
@@ -2948,7 +2948,7 @@ fn agent_body(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View
             let agent = agent.clone();
             move || agent.state.with(|state| format!("{:?}", state.status))
         })
-        .style(move |s| s.color(config.get().color(LapceColor::EDITOR_DIM))),
+        .style(move |s| s.color(config.get().color(GoldenIdeColor::EDITOR_DIM))),
     ))
     .style(|s| s.padding(6.0).items_center());
 
@@ -2987,7 +2987,7 @@ fn agent_body(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View
         s.items_center()
             .width_pct(100.0)
             .border_top(1.0)
-            .border_color(config.get().color(LapceColor::LAPCE_BORDER))
+            .border_color(config.get().color(GoldenIdeColor::GOLDENIDE_BORDER))
     });
 
     container(
@@ -3007,30 +3007,30 @@ Compile-driven adjustments to expect here: `floem::views::stack_from_iter` may l
 
 - [ ] **Step 5: Wire the panel into the existing matches**
 
-Run `cargo check -p lapce-app` and fix every non-exhaustive match on `PanelKind`:
+Run `cargo check -p goldenide-app` and fix every non-exhaustive match on `PanelKind`:
 
-- `lapce-app/src/panel/view.rs`, view match (near line 473): `PanelKind::Agent => agent_panel(window_tab_data.clone(), position).into_any(),` (import `agent_view::agent_panel`).
-- `lapce-app/src/panel/view.rs`, tooltip match (near line 553): `PanelKind::Agent => "Agent",`.
-- `lapce-app/src/window_tab.rs` `toggle_panel_focus` (near line 2680): add `PanelKind::Agent` to the arm `PanelKind::Terminal | PanelKind::SourceControl | PanelKind::Search` (it accepts focus).
-- `lapce-app/src/window_tab.rs` key routing (near line 2404): add `Focus::Panel(PanelKind::Agent) => Some(keypress.key_down(event, &self.agent)),`.
-- `lapce-app/src/doc.rs` (near line 2179): add `| Focus::Panel(PanelKind::Agent)` to the `matches!` list so keyboard events reach the panel.
+- `goldenide-app/src/panel/view.rs`, view match (near line 473): `PanelKind::Agent => agent_panel(window_tab_data.clone(), position).into_any(),` (import `agent_view::agent_panel`).
+- `goldenide-app/src/panel/view.rs`, tooltip match (near line 553): `PanelKind::Agent => "Agent",`.
+- `goldenide-app/src/window_tab.rs` `toggle_panel_focus` (near line 2680): add `PanelKind::Agent` to the arm `PanelKind::Terminal | PanelKind::SourceControl | PanelKind::Search` (it accepts focus).
+- `goldenide-app/src/window_tab.rs` key routing (near line 2404): add `Focus::Panel(PanelKind::Agent) => Some(keypress.key_down(event, &self.agent)),`.
+- `goldenide-app/src/doc.rs` (near line 2179): add `| Focus::Panel(PanelKind::Agent)` to the `matches!` list so keyboard events reach the panel.
 
-Add two commands in `lapce-app/src/command.rs` following the exact pattern of `ToggleProblemVisual` / `ToggleProblemFocus` (same `#[strum(serialize = ..)]` and `#[strum(message = ..)]` attributes): `ToggleAgentVisual` (`toggle_agent_visual`, "Toggle Agent Visual") and `ToggleAgentFocus` (`toggle_agent_focus`, "Toggle Agent Focus"). Handle them in `window_tab.rs` next to the Problem ones: `ToggleAgentVisual => self.toggle_panel_visual(PanelKind::Agent),` and `ToggleAgentFocus => self.toggle_panel_focus(PanelKind::Agent),`. Do not add default keybindings (users bind them).
+Add two commands in `goldenide-app/src/command.rs` following the exact pattern of `ToggleProblemVisual` / `ToggleProblemFocus` (same `#[strum(serialize = ..)]` and `#[strum(message = ..)]` attributes): `ToggleAgentVisual` (`toggle_agent_visual`, "Toggle Agent Visual") and `ToggleAgentFocus` (`toggle_agent_focus`, "Toggle Agent Focus"). Handle them in `window_tab.rs` next to the Problem ones: `ToggleAgentVisual => self.toggle_panel_visual(PanelKind::Agent),` and `ToggleAgentFocus => self.toggle_panel_focus(PanelKind::Agent),`. Do not add default keybindings (users bind them).
 
 - [ ] **Step 6: Build, lint, test**
 
-Run: `cargo fmt --all && cargo clippy -p lapce-rpc -p lapce-proxy -p lapce-app -- -D warnings && cargo test -p lapce-rpc -p lapce-proxy -p lapce-app`
+Run: `cargo fmt --all && cargo clippy -p goldenide-rpc -p goldenide-proxy -p goldenide-app -- -D warnings && cargo test -p goldenide-rpc -p goldenide-proxy -p goldenide-app`
 Expected: clean, all tests pass.
 
 - [ ] **Step 7: Manual smoke test with the mock agent**
 
-Run `scripts/build-debug.sh` (or `cargo run -p lapce-app`). In Settings (`settings.toml`) point `default-server` at a temporary server entry that runs the mock: 
+Run `scripts/build-debug.sh` (or `cargo run -p goldenide-app`). In Settings (`settings.toml`) point `default-server` at a temporary server entry that runs the mock: 
 
 ```toml
 [agent]
 default-server = "mock"
 [agent.servers.mock]
-command = "/home/fabio/dev/projects/lapce/target/debug/examples/mock_acp_agent"
+command = "/home/fabio/dev/projects/goldenide/target/debug/examples/mock_acp_agent"
 ```
 
 Open the folder `/mock` (create it first: `mkdir -p /mock` or change the mock's path constant locally, do not commit that). Open the command palette, run "Toggle Agent Visual". Type a message, press Enter. Expected: "hello" streams in, a permission bar appears with Allow and Reject, Allow writes `/mock/out.txt`, transcript ends the turn, and Send is enabled again. Revert the `settings.toml` change.
@@ -3040,7 +3040,7 @@ Open the folder `/mock` (create it first: `mkdir -p /mock` or change the mock's 
 Append to `CHANGES.md`: `- Added the Agent panel (right side by default) with transcript, permission prompt and input, plus toggle_agent_visual and toggle_agent_focus commands.`
 
 ```bash
-git add lapce-app defaults icons CHANGES.md
+git add goldenide-app defaults icons CHANGES.md
 git commit -m "feat(agent): add the agent panel"
 ```
 
@@ -3061,7 +3061,7 @@ Set `default-server = "pi"`. Ask a question about the open file and confirm a st
 
 - [ ] **Step 3: Process cleanup check**
 
-Start a session, then close the Lapce window. Run `pgrep -fa "claude-agent-acp|mock_acp_agent|pi-acp"`. Expected: no leftover agent process. If one remains, the `AcpAgent` child is not killed on drop: in `AgentManager::stop` and on proxy shutdown that is a bug to fix before merging (spawn the child with kill-on-drop or keep its handle and kill it explicitly), with a regression test in `agent_session.rs` that asserts the mock process is gone after `stop()`.
+Start a session, then close the GoldenIDE window. Run `pgrep -fa "claude-agent-acp|mock_acp_agent|pi-acp"`. Expected: no leftover agent process. If one remains, the `AcpAgent` child is not killed on drop: in `AgentManager::stop` and on proxy shutdown that is a bug to fix before merging (spawn the child with kill-on-drop or keep its handle and kill it explicitly), with a regression test in `agent_session.rs` that asserts the mock process is gone after `stop()`.
 
 - [ ] **Step 4: Security review**
 

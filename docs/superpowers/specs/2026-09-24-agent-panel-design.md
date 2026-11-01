@@ -5,15 +5,15 @@ Status: implemented (v1), manual agent tests pending
 
 ## Goal
 
-Add an AI agent panel to Lapce, similar to Zed and VS Code, to chat with an external coding agent that knows the project context and can modify code in the editor. Lapce acts as an ACP (Agent Client Protocol) client. It does not contain its own LLM loop.
+Add an AI agent panel to GoldenIDE, similar to Zed and VS Code, to chat with an external coding agent that knows the project context and can modify code in the editor. GoldenIDE acts as an ACP (Agent Client Protocol) client. It does not contain its own LLM loop.
 
 ## Decisions
 
 - Protocol: ACP, agent runs as a subprocess speaking JSON-RPC over stdio.
-- Agent host: `lapce-proxy`, so remote, WSL and SSH workspaces work.
+- Agent host: `goldenide-proxy`, so remote, WSL and SSH workspaces work.
 - Edit flow (v1): edits are applied to buffers with per-request approval. No diff review UI.
 - Agents in v1: Claude Code and pi (both via ACP adapters). Others are configurable through settings but not tested.
-- Protocol implementation: official `agent-client-protocol` Rust crate. Fallback: hand-rolled JSON-RPC over `lapce-rpc/src/stdio.rs`, keeping all ACP logic behind one module boundary.
+- Protocol implementation: official `agent-client-protocol` Rust crate. Fallback: hand-rolled JSON-RPC over `goldenide-rpc/src/stdio.rs`, keeping all ACP logic behind one module boundary.
 
 ## Non-goals (v1)
 
@@ -24,12 +24,12 @@ Add an AI agent panel to Lapce, similar to Zed and VS Code, to chat with an exte
 
 ## Components
 
-- `lapce-rpc`: new agent messages.
+- `goldenide-rpc`: new agent messages.
   - UI to proxy: `AgentStart(config)`, `AgentPrompt(text, context refs)`, `AgentCancel`, `AgentPermissionReply`.
   - Proxy to UI: `AgentMessageChunk`, `AgentToolCall`, `AgentPermissionRequest`, `AgentStatus`, plus request/response pairs for buffer read and write (see File requests).
-- `lapce-proxy/src/agent/`: spawns the agent process, runs the ACP session, serves the agent's file and terminal requests. Depends on the proxy buffer and terminal layers.
-- `lapce-app/src/agent/`: chat data model (messages, tool cards, pending permission). No UI code.
-- `lapce-app/src/panel/agent_view.rs`: floem view. New `PanelKind::Agent` in `panel/kind.rs`, new icon, entry in the panel position defaults.
+- `goldenide-proxy/src/agent/`: spawns the agent process, runs the ACP session, serves the agent's file and terminal requests. Depends on the proxy buffer and terminal layers.
+- `goldenide-app/src/agent/`: chat data model (messages, tool cards, pending permission). No UI code.
+- `goldenide-app/src/panel/agent_view.rs`: floem view. New `PanelKind::Agent` in `panel/kind.rs`, new icon, entry in the panel position defaults.
 - Config: `[agent.servers.<name>]` with `command`, `args`, `env`. Claude Code and pi ship as defaults.
 
 ## Data flow
@@ -40,11 +40,11 @@ File requests (`fs/read_text_file`, `fs/write_text_file`):
 - Unsaved buffer content lives in the UI (`doc.rs`). The proxy forwards these requests to the UI as request/response.
 - Read: the UI returns buffer content if the file is open, else the proxy reads from disk.
 - Write: the UI applies the change to the buffer as a single undoable edit. If the file is not open, the proxy writes to disk.
-- To verify before implementation: whether `lapce-proxy/src/buffer.rs` keeps a synced buffer copy that would make forwarding unnecessary.
+- To verify before implementation: whether `goldenide-proxy/src/buffer.rs` keeps a synced buffer copy that would make forwarding unnecessary.
 
 Permissions: `session/request_permission` becomes `AgentPermissionRequest`. The panel shows the options supplied by the agent. The proxy blocks the agent call until `AgentPermissionReply`. Writes and commands are gated. Reads are not.
 
-Terminal requests: reuse `lapce-proxy/src/terminal.rs`. Output streams back to the agent and appears in a tool card.
+Terminal requests: reuse `goldenide-proxy/src/terminal.rs`. Output streams back to the agent and appears in a tool card.
 
 Cancel: `AgentCancel` sends `session/cancel` and rejects any pending permission.
 
@@ -69,7 +69,7 @@ Cancel: `AgentCancel` sends `session/cancel` and rejects any pending permission.
 ## Changes found during planning
 
 - Terminal requests are out of v1: `terminal` capability is not advertised. The agent uses its own shell tool and asks permission through `session/request_permission`.
-- ACP has no client-side gate on `fs/write_text_file`. Permission prompts come from the agent. Lapce enforces a workspace path guard on every read and write.
+- ACP has no client-side gate on `fs/write_text_file`. Permission prompts come from the agent. GoldenIDE enforces a workspace path guard on every read and write.
 - `CoreRequest` is empty and the UI has no reply path, so file writes to open buffers use a `CoreNotification::AgentApplyEdit`, reads run in the dispatcher (`ProxyRequest::AgentReadFile`), writes to closed files go to disk in the proxy (`ProxyRequest::AgentWriteFile`).
 - Resolved: the ACP crate is runtime agnostic (no tokio), so it runs on a dedicated proxy thread with `futures::executor::block_on`. The proxy holds synced buffers, but inside the single-threaded dispatcher.
 - Default panel position: right side.

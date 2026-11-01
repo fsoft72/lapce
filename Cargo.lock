@@ -992,7 +992,7 @@ dependencies = [
  "nom",
  "pathdiff",
  "serde",
- "toml 0.5.9",
+ "toml",
 ]
 
 [[package]]
@@ -2382,6 +2382,163 @@ dependencies = [
 ]
 
 [[package]]
+name = "goldenide"
+version = "0.4.6"
+dependencies = [
+ "goldenide-app",
+ "goldenide-proxy",
+]
+
+[[package]]
+name = "goldenide-app"
+version = "0.4.6"
+dependencies = [
+ "Inflector",
+ "alacritty_terminal",
+ "anyhow",
+ "backtrace",
+ "base64 0.21.7",
+ "bytemuck",
+ "chrono",
+ "clap",
+ "config",
+ "criterion",
+ "crossbeam-channel",
+ "dmg",
+ "floem",
+ "fs_extra",
+ "globset",
+ "goldenide-core",
+ "goldenide-proxy",
+ "goldenide-rpc",
+ "im",
+ "include_dir",
+ "indexmap 2.9.0",
+ "interprocess",
+ "itertools 0.12.1",
+ "lapce-xi-rope",
+ "lsp-types",
+ "notify",
+ "nucleo",
+ "once_cell",
+ "open",
+ "parking_lot",
+ "percent-encoding",
+ "pulldown-cmark",
+ "rayon",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "smallvec",
+ "structdesc",
+ "strum 0.27.2",
+ "strum_macros 0.27.2",
+ "thiserror 1.0.69",
+ "toml",
+ "toml_edit 0.20.2",
+ "tracing 0.2.0",
+ "tracing-appender",
+ "tracing-log",
+ "tracing-subscriber",
+ "unicode-width",
+ "url",
+ "windows-sys 0.45.0",
+]
+
+[[package]]
+name = "goldenide-core"
+version = "0.4.6"
+dependencies = [
+ "ahash",
+ "anyhow",
+ "arc-swap",
+ "directories",
+ "floem-editor-core",
+ "git2",
+ "goldenide-rpc",
+ "hashbrown 0.14.5",
+ "include_dir",
+ "itertools 0.12.1",
+ "lapce-xi-rope",
+ "libloading",
+ "lsp-types",
+ "once_cell",
+ "regex",
+ "remain",
+ "slotmap",
+ "strum 0.27.2",
+ "strum_macros 0.27.2",
+ "thiserror 1.0.69",
+ "tracing 0.2.0",
+ "tree-sitter",
+]
+
+[[package]]
+name = "goldenide-proxy"
+version = "0.4.6"
+dependencies = [
+ "agent-client-protocol",
+ "alacritty_terminal",
+ "anyhow",
+ "clap",
+ "crossbeam-channel",
+ "directories",
+ "dyn-clone",
+ "floem-editor-core",
+ "futures",
+ "git2",
+ "globset",
+ "goldenide-core",
+ "goldenide-rpc",
+ "grep-matcher",
+ "grep-regex",
+ "grep-searcher",
+ "ignore",
+ "indexmap 2.9.0",
+ "interprocess",
+ "jsonrpc-lite",
+ "lapce-xi-rope",
+ "libc",
+ "locale_config",
+ "lsp-types",
+ "notify",
+ "parking_lot",
+ "polling",
+ "psp-types",
+ "regex",
+ "serde",
+ "serde_json",
+ "toml",
+ "tracing 0.2.0",
+ "tracing-log",
+ "trash",
+ "url",
+ "walkdir",
+ "wasi-common",
+ "wasi-experimental-http-wasmtime",
+ "wasmtime",
+ "wasmtime-wasi",
+]
+
+[[package]]
+name = "goldenide-rpc"
+version = "0.4.6"
+dependencies = [
+ "anyhow",
+ "crossbeam-channel",
+ "human-sort",
+ "indexmap 2.9.0",
+ "lapce-xi-rope",
+ "lsp-types",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tracing 0.2.0",
+ "url",
+]
+
+[[package]]
 name = "gpu-alloc"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3191,163 +3348,6 @@ dependencies = [
  "arrayvec",
  "serde",
  "smallvec",
-]
-
-[[package]]
-name = "lapce"
-version = "0.4.6"
-dependencies = [
- "lapce-app",
- "lapce-proxy",
-]
-
-[[package]]
-name = "lapce-app"
-version = "0.4.6"
-dependencies = [
- "Inflector",
- "alacritty_terminal",
- "anyhow",
- "backtrace",
- "base64 0.21.7",
- "bytemuck",
- "chrono",
- "clap",
- "config",
- "criterion",
- "crossbeam-channel",
- "dmg",
- "floem",
- "fs_extra",
- "globset",
- "im",
- "include_dir",
- "indexmap 2.9.0",
- "interprocess",
- "itertools 0.12.1",
- "lapce-core",
- "lapce-proxy",
- "lapce-rpc",
- "lapce-xi-rope",
- "lsp-types",
- "notify",
- "nucleo",
- "once_cell",
- "open",
- "parking_lot",
- "percent-encoding",
- "pulldown-cmark",
- "rayon",
- "regex",
- "serde",
- "serde_json",
- "sha2",
- "smallvec",
- "structdesc",
- "strum 0.27.2",
- "strum_macros 0.27.2",
- "thiserror 1.0.69",
- "toml 0.8.2",
- "toml_edit 0.20.2",
- "tracing 0.2.0",
- "tracing-appender",
- "tracing-log",
- "tracing-subscriber",
- "unicode-width",
- "url",
- "windows-sys 0.60.2",
-]
-
-[[package]]
-name = "lapce-core"
-version = "0.4.6"
-dependencies = [
- "ahash",
- "anyhow",
- "arc-swap",
- "directories",
- "floem-editor-core",
- "git2",
- "hashbrown 0.14.5",
- "include_dir",
- "itertools 0.12.1",
- "lapce-rpc",
- "lapce-xi-rope",
- "libloading",
- "lsp-types",
- "once_cell",
- "regex",
- "remain",
- "slotmap",
- "strum 0.27.2",
- "strum_macros 0.27.2",
- "thiserror 1.0.69",
- "tracing 0.2.0",
- "tree-sitter",
-]
-
-[[package]]
-name = "lapce-proxy"
-version = "0.4.6"
-dependencies = [
- "agent-client-protocol",
- "alacritty_terminal",
- "anyhow",
- "clap",
- "crossbeam-channel",
- "directories",
- "dyn-clone",
- "floem-editor-core",
- "futures",
- "git2",
- "globset",
- "grep-matcher",
- "grep-regex",
- "grep-searcher",
- "ignore",
- "indexmap 2.9.0",
- "interprocess",
- "jsonrpc-lite",
- "lapce-core",
- "lapce-rpc",
- "lapce-xi-rope",
- "libc",
- "locale_config",
- "lsp-types",
- "notify",
- "parking_lot",
- "polling",
- "psp-types",
- "regex",
- "serde",
- "serde_json",
- "toml 0.8.2",
- "tracing 0.2.0",
- "tracing-log",
- "trash",
- "url",
- "walkdir",
- "wasi-common",
- "wasi-experimental-http-wasmtime",
- "wasmtime",
- "wasmtime-wasi",
-]
-
-[[package]]
-name = "lapce-rpc"
-version = "0.4.6"
-dependencies = [
- "anyhow",
- "crossbeam-channel",
- "human-sort",
- "indexmap 2.9.0",
- "lapce-xi-rope",
- "lsp-types",
- "parking_lot",
- "serde",
- "serde_json",
- "tracing 0.2.0",
- "url",
 ]
 
 [[package]]
@@ -6059,18 +6059,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "toml"
-version = "0.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "185d8ab0dfbb35cf1399a6344d8484209c088f75f8f68230da55d48d95d43e3d"
-dependencies = [
- "serde",
- "serde_spanned",
- "toml_datetime 0.6.3",
- "toml_edit 0.20.2",
-]
-
-[[package]]
 name = "toml_datetime"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6749,7 +6737,7 @@ dependencies = [
  "serde",
  "serde_derive",
  "sha2",
- "toml 0.5.9",
+ "toml",
  "windows-sys 0.48.0",
  "zstd",
 ]
