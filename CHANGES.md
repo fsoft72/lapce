@@ -119,3 +119,8 @@
 - When a turn of the agent ends while the Lapce window has no focus, a desktop notification is shown ("Agent finished" with "Task completed" or a note that the agent ended without any response; "Agent stopped" with the stop reason for other stops; nothing when the user cancelled). New `desktop_notification` module (runs `notify-send`, unix only, a missing `notify-send` is only logged) and a `window_focused` signal in `WindowCommonData`, set from the window got and lost focus events. (Not verified by hand in the running app.)
 - Two new agent settings, both on by default: `agent.show-thinking` and `agent.show-tools` (checkboxes in the Settings, "Agent" section). When off, the "Thinking" or "Tool" boxes are hidden in the chat; the entries are still recorded, so turning a setting back on shows them again.
 - Selection in the agent answers: releasing the mouse button now keeps a finished selection even if the release event reaches the view twice (`after_pointer_up`), and the press, release and state changes are logged at debug level (`lapce_app::panel::selectable_text`) to find why a selection was lost on release. Not confirmed as the cause yet.
+
+## Publish script
+
+- Added `scripts/publish.sh <version>`: runs only on a clean `master`, bumps the version (`Cargo.toml`, `Cargo.lock`, macOS `Info.plist`, wix `goldenide.wxs`, `goldenide.spec`), commits, pushes `master`, merges it into `publish`, pushes `publish` and returns to `master`.
+- CI now runs on `master` and `publish`. Executables are built and uploaded only on `publish`; other branches just run `cargo check`.

@@ -2,6 +2,7 @@ on:
   push:
     branches:
       - master
+      - publish
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
@@ -52,10 +53,18 @@ jobs:
       - name: Fetch dependencies
         run: cargo fetch --locked
 
+      # Executables are built only on the publish branch
       - name: Build
+        if: github.ref == 'refs/heads/publish'
         run: cargo build --profile ci --frozen
 
+      # Any other branch only type-checks, no executables are produced
+      - name: Check
+        if: github.ref != 'refs/heads/publish'
+        run: cargo check --profile ci --frozen --workspace
+
       - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        if: github.ref == 'refs/heads/publish'
         with:
           name: goldenide-${{ matrix.os }}
           path: |
@@ -64,7 +73,7 @@ jobs:
           retention-days: 1
 
       - name: Build as portable
-        if: startsWith(matrix.os, 'windows')
+        if: startsWith(matrix.os, 'windows') && github.ref == 'refs/heads/publish'
         run: cargo build --profile ci --frozen --features goldenide-app/portable
 
       - name: Free space on Windows
