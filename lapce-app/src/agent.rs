@@ -32,6 +32,7 @@ use crate::{
         mention_contexts, mention_files,
     },
     command::{CommandExecuted, CommandKind, LapceCommand},
+    desktop_notification::desktop_notification,
     editor::EditorData,
     keypress::{KeyPressFocus, condition::Condition},
     main_split::MainSplitData,
@@ -82,6 +83,26 @@ pub fn scroll_top(top: usize, selected: usize, len: usize) -> usize {
 
 /// Stop reason (the `Debug` form of the ACP one) of a turn that finished normally.
 const END_TURN_STOP_REASON: &str = "EndTurn";
+
+/// What to tell the user, as a title and a message, when a turn ends while
+/// the window is in the background. `None` for a turn the user cancelled.
+/// `empty` is true when the agent ended the turn without any answer.
+fn finish_notice<'a>(
+    stop_reason: &'a str,
+    empty: bool,
+) -> Option<(&'static str, &'a str)> {
+    match stop_reason {
+        CANCELLED_STOP_REASON => None,
+        END_TURN_STOP_REASON if empty => {
+            Some(("Agent finished", "The agent ended without any response"))
+        }
+        END_TURN_STOP_REASON => Some(("Agent finished", TURN_COMPLETED_MESSAGE)),
+        other => Some(("Agent stopped", other)),
+    }
+}
+
+/// Stop reason of a turn the user cancelled.
+const CANCELLED_STOP_REASON: &str = "Cancelled";
 
 /// Shown when a turn ends normally after the agent answered.
 const TURN_COMPLETED_MESSAGE: &str = "Task completed";
@@ -582,6 +603,9 @@ pub struct AgentData {
     pub toast: RwSignal<Option<String>>,
     /// Counts the toasts shown, so an old timer never hides a newer toast.
     toast_seq: RwSignal<u64>,
+    /// Whether the window has the focus of the desktop. A finished turn is
+    /// announced with a desktop notification when it has not.
+    window_focused: RwSignal<bool>,
 }
 
 impl AgentData {
@@ -590,6 +614,7 @@ impl AgentData {
         cx: Scope,
         main_split: MainSplitData,
         common: Rc<CommonData>,
+        window_focused: RwSignal<bool>,
     ) -> Self {
         let input = main_split.editors.make_local(cx, common.clone());
         let mention = cx.create_rw_signal(None::<Mention>);
@@ -629,6 +654,7 @@ impl AgentData {
             files,
             toast: cx.create_rw_signal(None),
             toast_seq: cx.create_rw_signal(0),
+            window_focused,
         }
     }
 
@@ -823,6 +849,19 @@ impl AgentData {
     /// Applies an event coming from the proxy.
     pub fn handle_event(&self, event: AgentEvent) {
         self.state.update(|state| state.apply(&event));
+        let AgentEvent::TurnEnded { stop_reason } = &event else {
+            return;
+        };
+        if self.window_focused.get_untracked() {
+            return;
+        }
+        let empty = self.state.with_untracked(|state| {
+            matches!(state.items().back(),
+                Some(AgentItem::Error(message)) if message == EMPTY_TURN_MESSAGE)
+        });
+        if let Some((title, message)) = finish_notice(stop_reason, empty) {
+            desktop_notification(title, message);
+        }
     }
 
     /// Replaces the whole content of an open document as one undoable edit.
@@ -1390,6 +1429,23 @@ mod tests {
         assert_eq!(state.current_permission().unwrap().request_id, 2);
         assert_eq!(state.take_pending().unwrap().request_id, 2);
         assert!(state.take_pending().is_none());
+    }
+
+    #[test]
+    fn a_finished_turn_is_announced_but_a_cancelled_one_is_not() {
+        assert_eq!(
+            finish_notice("EndTurn", false),
+            Some(("Agent finished", "Task completed"))
+        );
+        assert_eq!(
+            finish_notice("EndTurn", true).map(|notice| notice.0),
+            Some("Agent finished")
+        );
+        assert_eq!(
+            finish_notice("MaxTokens", false),
+            Some(("Agent stopped", "MaxTokens"))
+        );
+        assert_eq!(finish_notice("Cancelled", false), None);
     }
 
     #[test]

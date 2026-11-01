@@ -1007,6 +1007,7 @@ fn window(window_data: WindowData) -> impl View {
     let window_focus = create_rw_signal(false);
     let ime_enabled = window_data.ime_enabled;
     let window_maximized = window_data.common.window_maximized;
+    let window_focused = window_data.common.window_focused;
 
     tab(active, items, key, |(_, window_tab_data)| {
         window_tab(window_tab_data)
@@ -1031,6 +1032,10 @@ fn window(window_data: WindowData) -> impl View {
     })
     .on_event_cont(EventListener::WindowGotFocus, move |_| {
         window_focus.set(true);
+        window_focused.set(true);
+    })
+    .on_event_cont(EventListener::WindowLostFocus, move |_| {
+        window_focused.set(false);
     })
     .on_event_cont(EventListener::WindowMaximizeChanged, move |event| {
         if let Event::WindowMaximizeChanged(maximized) = event {

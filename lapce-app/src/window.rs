@@ -52,6 +52,8 @@ pub struct WindowCommonData {
     // the value to be update by cursor blinking
     pub hide_cursor: RwSignal<bool>,
     pub app_view_id: RwSignal<ViewId>,
+    /// Whether the window has the keyboard focus of the desktop.
+    pub window_focused: RwSignal<bool>,
     pub extra_plugin_paths: Arc<Vec<PathBuf>>,
 }
 
@@ -133,6 +135,7 @@ impl WindowData {
             cursor_blink_timer,
             hide_cursor,
             app_view_id,
+            window_focused: cx.create_rw_signal(true),
             extra_plugin_paths,
         });
 

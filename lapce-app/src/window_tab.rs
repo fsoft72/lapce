@@ -421,6 +421,7 @@ impl WindowTabData {
 
         let title_height = cx.create_rw_signal(0.0);
         let status_height = cx.create_rw_signal(0.0);
+        let window_focused = window_common.window_focused;
         let panel_available_size = cx.create_memo(move |_| {
             let title_height = title_height.get();
             let status_height = status_height.get();
@@ -508,7 +509,8 @@ impl WindowTabData {
             common.clone(),
             proxy.core_rpc.clone(),
         );
-        let agent = AgentData::new(cx, main_split.clone(), common.clone());
+        let agent =
+            AgentData::new(cx, main_split.clone(), common.clone(), window_focused);
 
         {
             let notification = create_signal_from_channel(term_notification_rx);

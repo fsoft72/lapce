@@ -11,6 +11,7 @@ pub mod completion;
 pub mod config;
 pub mod db;
 pub mod debug;
+pub mod desktop_notification;
 pub mod doc;
 pub mod editor;
 pub mod editor_tab;
