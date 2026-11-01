@@ -106,6 +106,8 @@ open-editors-visible = true
 
 [agent]
 default-server = "claude-code"
+show-thinking = true
+show-tools = true
 
 [agent.servers.claude-code]
 command = "npx"

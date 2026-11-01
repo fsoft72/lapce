@@ -28,8 +28,19 @@ pub struct AgentServerSetting {
 pub struct AgentConfig {
     #[field_names(desc = "Name of the agent server started from the agent panel")]
     pub default_server: String,
+    #[serde(default = "default_true")]
+    #[field_names(desc = "Show the agent's thinking in the chat")]
+    pub show_thinking: bool,
+    #[serde(default = "default_true")]
+    #[field_names(desc = "Show the agent's tool calls in the chat")]
+    pub show_tools: bool,
     #[field_names(skip)]
     pub servers: HashMap<String, AgentServerSetting>,
+}
+
+/// Serde default of the options that are on unless the user turns them off.
+fn default_true() -> bool {
+    true
 }
 
 impl AgentConfig {
@@ -67,6 +78,8 @@ mod tests {
     fn config(default: &str, command: &str) -> AgentConfig {
         AgentConfig {
             default_server: default.to_string(),
+            show_thinking: true,
+            show_tools: true,
             servers: HashMap::from([(
                 "claude-code".to_string(),
                 AgentServerSetting {
@@ -95,5 +108,17 @@ mod tests {
     #[test]
     fn empty_command_is_rejected() {
         assert!(config("claude-code", "  ").resolve().is_err());
+    }
+
+    #[test]
+    fn thinking_and_tools_are_shown_unless_turned_off() {
+        let missing: AgentConfig =
+            toml::from_str("default-server = \"a\"\n[servers]").unwrap();
+        assert!(missing.show_thinking && missing.show_tools);
+        let off: AgentConfig = toml::from_str(
+            "default-server = \"a\"\nshow-thinking = false\nshow-tools = false\n[servers]",
+        )
+        .unwrap();
+        assert!(!off.show_thinking && !off.show_tools);
     }
 }

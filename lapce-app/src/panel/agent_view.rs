@@ -496,6 +496,9 @@ fn item_view(window_tab_data: Rc<WindowTabData>, index: usize) -> impl View {
     ))
     .style(move |s| {
         let config = config.get();
+        let agent = &config.agent;
+        let hidden =
+            (is_thought && !agent.show_thinking) || (is_tool && !agent.show_tools);
         // The user's prompts sit in a tinted box so they stand out from the replies.
         // No fixed width: the column stretches the box between its margins.
         s.flex_col()
@@ -503,6 +506,7 @@ fn item_view(window_tab_data: Rc<WindowTabData>, index: usize) -> impl View {
             .margin_horiz(ITEM_MARGIN_HORIZ)
             .padding_horiz(ITEM_PADDING.0)
             .padding_vert(ITEM_PADDING.1)
+            .apply_if(hidden, |s| s.hide())
             .apply_if(is_user, |s| {
                 s.margin_vert(ITEM_SPACING)
                     .padding_vert(USER_PROMPT_PADDING_VERT)
