@@ -42,6 +42,18 @@ impl SelectionState {
     }
 }
 
+/// The state after the mouse button is released. A drag becomes a finished
+/// selection and a finished selection stays, so a second release event does
+/// not wipe it; a press without a drag selects nothing.
+fn after_pointer_up(state: SelectionState) -> SelectionState {
+    match state {
+        SelectionState::Selecting(a, b) | SelectionState::Selected(a, b) => {
+            SelectionState::Selected(a, b)
+        }
+        SelectionState::Ready(_) | SelectionState::None => SelectionState::None,
+    }
+}
+
 /// The layout the text is drawn with at `width`: wrapped when wider, as
 /// floem's `rich_text` does, so positions match what is on screen.
 fn wrapped_layout(layout: &TextLayout, width: f32) -> TextLayout {
@@ -130,6 +142,7 @@ pub fn selectable_text(
     view.on_resize(move |rect| width.set(rect.width() as f32))
         .on_event(EventListener::PointerDown, move |event| {
             if let Event::PointerDown(pe) = event {
+                tracing::debug!("selectable text pointer down at {:?}", pe.pos);
                 state.set(SelectionState::Ready(pe.pos));
             }
             EventPropagation::Continue
@@ -151,12 +164,10 @@ pub fn selectable_text(
             EventPropagation::Continue
         })
         .on_event(EventListener::PointerUp, move |_| {
-            state.update(|state| {
-                *state = match *state {
-                    SelectionState::Selecting(a, b) => SelectionState::Selected(a, b),
-                    _ => SelectionState::None,
-                }
-            });
+            let before = state.get_untracked();
+            let after = after_pointer_up(before);
+            tracing::debug!("selectable text pointer up: {before:?} -> {after:?}");
+            state.set(after);
             id.clear_active();
             EventPropagation::Continue
         })
@@ -212,6 +223,18 @@ mod tests {
         assert_eq!(
             selected_text(&layout, cursor(0, 6), cursor(1, 6)).as_deref(),
             Some("world\nsecond")
+        );
+    }
+
+    #[test]
+    fn releasing_the_button_keeps_a_selection_even_twice() {
+        let (a, b) = (Point::new(1.0, 2.0), Point::new(30.0, 2.0));
+        let once = after_pointer_up(SelectionState::Selecting(a, b));
+        assert_eq!(once, SelectionState::Selected(a, b));
+        assert_eq!(after_pointer_up(once), once);
+        assert_eq!(
+            after_pointer_up(SelectionState::Ready(a)),
+            SelectionState::None
         );
     }
 
