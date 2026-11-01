@@ -276,6 +276,15 @@ impl AgentState {
         )));
     }
 
+    /// Forgets the whole conversation: the transcript, the running turn and
+    /// the pending permission requests. The connection status and the agent
+    /// settings are kept.
+    pub fn clear_chat(&mut self) {
+        self.items.clear();
+        self.revisions.clear();
+        self.reset_turn();
+    }
+
     /// True when the agent answered the last prompt with text or a tool call.
     /// Thoughts alone do not count: the user sees no answer.
     fn turn_produced_output(&self) -> bool {
@@ -875,6 +884,20 @@ impl AgentData {
         }
     }
 
+    /// Starts a new conversation: the transcript is cleared and, when an
+    /// agent is running, its session is replaced by a fresh one so it keeps
+    /// no memory or context of the old chat.
+    pub fn new_chat(&self) {
+        self.picker.set(None);
+        self.state.update(|state| state.clear_chat());
+        let running = self.state.with_untracked(|state| {
+            matches!(state.status, AgentStatus::Ready | AgentStatus::Starting)
+        });
+        if running {
+            self.restart();
+        }
+    }
+
     /// Sends the input box content as a prompt, starting the agent first if
     /// needed. The input box is cleared only when the prompt was sent.
     pub fn send_input(&self) {
@@ -1246,6 +1269,21 @@ mod tests {
         assert_eq!(state.current_permission().unwrap().request_id, 2);
         assert_eq!(state.take_pending().unwrap().request_id, 2);
         assert!(state.take_pending().is_none());
+    }
+
+    #[test]
+    fn clear_chat_empties_the_transcript_and_the_turn() {
+        let mut state = AgentState::default();
+        state.push_user("hi", Vec::new());
+        request_permission(&mut state, 1);
+        state.apply(&AgentEvent::MessageChunk { text: "a".into() });
+        state.clear_chat();
+        assert_eq!(state.last_user_index(), None);
+        assert!(!state.busy);
+        assert!(state.pending.is_empty());
+        assert!(state.item(0).is_none());
+        state.push_user("again", Vec::new());
+        assert_eq!(state.last_user_index(), Some(0));
     }
 
     #[test]

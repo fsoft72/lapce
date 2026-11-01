@@ -1,19 +1,19 @@
 use std::{rc::Rc, sync::Arc};
 
 use floem::{
-    AnyView, IntoView, View,
     event::{Event, EventListener, EventPropagation},
     kurbo::{Point, Size},
     reactive::{
-        ReadSignal, RwSignal, SignalGet, SignalUpdate, SignalWith, create_rw_signal,
+        create_rw_signal, ReadSignal, RwSignal, SignalGet, SignalUpdate, SignalWith,
     },
     style::{CursorStyle, Style},
-    taffy::AlignItems,
+    taffy::{AlignItems, JustifyContent},
     unit::PxPctAuto,
     views::{
-        Decorators, container, dyn_stack, empty, h_stack, label, stack,
-        stack_from_iter, tab, text,
+        container, dyn_stack, empty, h_stack, label, stack, stack_from_iter, tab,
+        text, Decorators,
     },
+    AnyView, IntoView, View,
 };
 
 use super::{
@@ -29,7 +29,7 @@ use super::{
 };
 use crate::{
     app::{clickable_icon, clickable_icon_base},
-    config::{LapceConfig, color::LapceColor, icon::LapceIcons},
+    config::{color::LapceColor, icon::LapceIcons, LapceConfig},
     file_explorer::view::file_explorer_panel,
     panel::{
         call_hierarchy_view::show_hierarchy_panel, document_symbol::symbol_panel,
@@ -98,35 +98,43 @@ impl PanelBuilder {
         mut self,
         name: &'static str,
         height: Option<PxPctAuto>,
+        action: Option<AnyView>,
         view: impl View + 'static,
         open: RwSignal<bool>,
         style: impl Fn(Style) -> Style + 'static,
     ) -> Self {
         let position = self.position;
-        let view = foldable_panel_section(
-            text(name).style(move |s| s.selectable(false)),
-            view,
-            open,
-            self.config,
-        )
-        .style(move |s| {
-            let s = s.width_full().flex_col();
-            // Use the manual height if given, otherwise if we're open behave flex,
-            // otherwise, do nothing so that there's no height
-            let s = if open.get() {
-                if let Some(height) = height {
-                    s.height(height)
+        let title = text(name).style(move |s| s.selectable(false));
+        // A header action sits at the right end of the header row.
+        let header = match action {
+            Some(action) => h_stack((title, action))
+                .style(|s| {
+                    s.flex_grow(1.0f32)
+                        .justify_content(Some(JustifyContent::SpaceBetween))
+                })
+                .into_any(),
+            None => title.into_any(),
+        };
+        let view = foldable_panel_section(header, view, open, self.config).style(
+            move |s| {
+                let s = s.width_full().flex_col();
+                // Use the manual height if given, otherwise if we're open behave flex,
+                // otherwise, do nothing so that there's no height
+                let s = if open.get() {
+                    if let Some(height) = height {
+                        s.height(height)
+                    } else {
+                        s.flex_grow(1.0f32).flex_basis(0.0)
+                    }
+                } else if position.is_bottom() {
+                    s.flex_grow(0.3f32).flex_basis(0.0)
                 } else {
-                    s.flex_grow(1.0f32).flex_basis(0.0)
-                }
-            } else if position.is_bottom() {
-                s.flex_grow(0.3f32).flex_basis(0.0)
-            } else {
-                s
-            };
+                    s
+                };
 
-            style(s)
-        });
+                style(s)
+            },
+        );
         self.views.push(view.into_any());
         self
     }
@@ -138,7 +146,26 @@ impl PanelBuilder {
         view: impl View + 'static,
         open: RwSignal<bool>,
     ) -> Self {
-        self.add_general(name, None, view, open, std::convert::identity)
+        self.add_general(name, None, None, view, open, std::convert::identity)
+    }
+
+    /// Add a view to the panel with `action` (such as a button) at the right
+    /// end of the section header
+    pub fn add_with_action(
+        self,
+        name: &'static str,
+        action: impl View + 'static,
+        view: impl View + 'static,
+        open: RwSignal<bool>,
+    ) -> Self {
+        self.add_general(
+            name,
+            None,
+            Some(action.into_any()),
+            view,
+            open,
+            std::convert::identity,
+        )
     }
 
     /// Add a view to the panel with a custom style applied to the overall header+section-content
@@ -149,7 +176,7 @@ impl PanelBuilder {
         open: RwSignal<bool>,
         style: impl Fn(Style) -> Style + 'static,
     ) -> Self {
-        self.add_general(name, None, view, open, style)
+        self.add_general(name, None, None, view, open, style)
     }
 
     /// Add a view to the panel with a custom height that is only used when the panel is open
@@ -163,6 +190,7 @@ impl PanelBuilder {
         self.add_general(
             name,
             Some(height.into()),
+            None,
             view,
             open,
             std::convert::identity,
@@ -179,7 +207,7 @@ impl PanelBuilder {
         open: RwSignal<bool>,
         style: impl Fn(Style) -> Style + 'static,
     ) -> Self {
-        self.add_general(name, Some(height.into()), view, open, style)
+        self.add_general(name, Some(height.into()), None, view, open, style)
     }
 
     /// Add a view to the panel with a custom height that is only used when the panel is open
@@ -193,6 +221,7 @@ impl PanelBuilder {
         self.add_general(
             name,
             Some(PxPctAuto::Pct(height)),
+            None,
             view,
             open,
             std::convert::identity,

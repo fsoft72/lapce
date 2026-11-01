@@ -136,8 +136,12 @@ pub fn agent_panel(
     let config = window_tab_data.common.config;
     let agent = window_tab_data.agent.clone();
     PanelBuilder::new(config, position)
-        .add(
+        .add_with_action(
             "Agent",
+            button(window_tab_data.clone(), "New Chat", {
+                let agent = agent.clone();
+                move || agent.new_chat()
+            }),
             agent_body(window_tab_data.clone(), agent),
             window_tab_data.panel.section_open(PanelSection::Agent),
         )
