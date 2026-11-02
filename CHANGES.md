@@ -1,5 +1,9 @@
 # Changes
 
+## Agent panel resize
+
+- Dragging the border of the right sidebar with the agent panel open is meant to be less jerky: the transcript no longer scrolls to the end (and forces an extra layout pass) when only its width changed, and the prompt box sets its wrap width only when it really changed. Not yet confirmed on a real drag: if it still stutters, profile the layout cost per frame.
+
 ## Rebrand to GoldenIDE
 
 - Project renamed from Lapce to GoldenIDE. Executable is `golden-ide`, remote proxy is `goldenide-proxy`. Crates are now `goldenide-app`, `goldenide-core`, `goldenide-proxy`, `goldenide-rpc` (directories renamed too). Identifiers (`GoldenIdeColor`, `GoldenIdeConfig`, ...), theme color keys (`goldenide.*`), env vars (`GOLDENIDE_*`), per-project dir (`.goldenide`), app id (`dev.goldenide.goldenide`) and packaging files were renamed accordingly. The user config and data directories change name, so existing Lapce settings are not picked up.

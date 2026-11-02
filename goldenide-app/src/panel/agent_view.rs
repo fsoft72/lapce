@@ -116,6 +116,10 @@ const INPUT_WRAP_MARGIN: f64 = 10.0;
 /// Narrowest width the prompt text is ever wrapped at.
 const INPUT_MIN_WRAP_WIDTH: f64 = 50.0;
 
+/// Smallest change of a measure (in pixels) that is worth reacting to. Smaller
+/// changes are rounding noise of the layout.
+const LAYOUT_EPSILON: f64 = 0.5;
+
 /// Room kept visible around the caret when the prompt box scrolls to it, as
 /// (horizontal, vertical).
 const CARET_SCROLL_MARGIN: (f64, f64) = (30.0, 10.0);
@@ -217,6 +221,13 @@ fn follow_after_scroll(
         return false;
     }
     following
+}
+
+/// Whether `new` differs from `old` by more than [`LAYOUT_EPSILON`]. Used to
+/// skip the work that follows a resize when the measure that matters did not
+/// move, e.g. the panel is dragged wider but the transcript height is the same.
+fn measure_changed(old: f64, new: f64) -> bool {
+    (new - old).abs() > LAYOUT_EPSILON
 }
 
 /// The text of the activity row for animation step `step`: "Working" followed
@@ -1092,7 +1103,11 @@ fn input_box(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View 
         })
         .on_scroll(move |rect| {
             let text_width = rect.width() - pad_x - INPUT_WRAP_MARGIN;
-            wrap_width.set(text_width.max(INPUT_MIN_WRAP_WIDTH) as f32);
+            let new_wrap = text_width.max(INPUT_MIN_WRAP_WIDTH);
+            // Setting the signal restyles the editor even for the same value.
+            if measure_changed(wrap_width.get_untracked() as f64, new_wrap) {
+                wrap_width.set(new_wrap as f32);
+            }
             viewport.set(rect);
         })
         .ensure_visible(move || {
@@ -1197,6 +1212,12 @@ fn agent_body(window_tab_data: Rc<WindowTabData>, agent: AgentData) -> impl View
             },
         )
         .on_resize(move |rect| {
+            // Dragging the panel border resizes the transcript on every frame
+            // while its height mostly stays put: skip the scroll (and the
+            // extra layout pass it causes) in that case.
+            if !measure_changed(content_height.get_untracked(), rect.height()) {
+                return;
+            }
             content_height.set(rect.height());
             if follow.get_untracked() {
                 scroll_to_end.update(|ticks| *ticks += 1);
@@ -1273,7 +1294,10 @@ mod tests {
 
     use std::path::Path;
 
-    use super::{change_row, follow_after_scroll, is_activation_key, working_text};
+    use super::{
+        change_row, follow_after_scroll, is_activation_key, measure_changed,
+        working_text,
+    };
 
     #[test]
     fn a_change_row_splits_the_name_from_the_relative_folder() {
@@ -1298,6 +1322,14 @@ mod tests {
         assert!(!follow_after_scroll(false, 300.0, 300.0, 700.0, 1200.0));
         // Scrolling back down to the end follows again.
         assert!(follow_after_scroll(false, 300.0, 800.0, 1190.0, 1200.0));
+    }
+
+    #[test]
+    fn a_measure_changes_only_beyond_the_rounding_noise() {
+        assert!(!measure_changed(100.0, 100.0));
+        assert!(!measure_changed(100.0, 100.3));
+        assert!(measure_changed(100.0, 101.0));
+        assert!(measure_changed(101.0, 100.0));
     }
 
     #[test]
