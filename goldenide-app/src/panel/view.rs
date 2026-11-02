@@ -1,7 +1,8 @@
-use std::{rc::Rc, sync::Arc};
+use std::{cell::Cell, rc::Rc, sync::Arc, time::Duration};
 
 use floem::{
     AnyView, IntoView, View,
+    action::exec_after,
     event::{Event, EventListener, EventPropagation},
     kurbo::{Point, Size},
     reactive::{
@@ -236,6 +237,11 @@ impl PanelBuilder {
     }
 }
 
+/// Minimum time between two applications of a panel resize while the border
+/// is dragged: about one frame at 60 Hz.
+const RESIZE_APPLY_INTERVAL: Duration = Duration::from_millis(16);
+
+/// Builds the container of the panels at `position`.
 pub fn panel_container_view(
     window_tab_data: Rc<WindowTabData>,
     position: PanelContainerPosition,
@@ -302,79 +308,112 @@ pub fn panel_container_view(
             let view = empty();
             let view_id = view.id();
             let drag_start: RwSignal<Option<Point>> = create_rw_signal(None);
+            // Moves arrive faster than frames (a mouse reports hundreds of
+            // events per second) and floem runs a full style and layout pass
+            // after each one, so the resize is applied at most once per
+            // RESIZE_APPLY_INTERVAL, with the last position received.
+            let pending_pos: Rc<Cell<Option<Point>>> = Rc::new(Cell::new(None));
+            let timer_set = Rc::new(Cell::new(false));
+            let apply_drag: Rc<dyn Fn()> = {
+                let pending_pos = pending_pos.clone();
+                Rc::new(move || {
+                    let Some(pos) = pending_pos.take() else {
+                        return;
+                    };
+                    let Some(drag_start_point) = drag_start.get_untracked() else {
+                        return;
+                    };
+                    let current_size = current_size.get_untracked();
+                    let available_size = available_size.get_untracked();
+                    match position {
+                        PanelContainerPosition::Left => {
+                            let new_size =
+                                current_size.width + pos.x - drag_start_point.x;
+                            let current_panel_size = panel_size.get_untracked();
+                            let new_size = new_size
+                                .max(150.0)
+                                .min(available_size.width - 150.0 - 150.0);
+                            if new_size != current_panel_size.left {
+                                panel_size.update(|size| {
+                                    size.left = new_size;
+                                    size.right = size
+                                        .right
+                                        .min(available_size.width - new_size - 150.0)
+                                })
+                            }
+                        }
+                        PanelContainerPosition::Bottom => {
+                            let new_size =
+                                current_size.height - (pos.y - drag_start_point.y);
+                            let maximized = panel.panel_bottom_maximized(false);
+                            if (maximized && new_size < available_size.height - 50.0)
+                                || (!maximized
+                                    && new_size > available_size.height - 50.0)
+                            {
+                                panel.toggle_bottom_maximize();
+                            }
+
+                            let new_size = new_size
+                                .max(100.0)
+                                .min(available_size.height - 100.0);
+                            let current_size =
+                                panel_size.with_untracked(|s| s.bottom);
+                            if current_size != new_size {
+                                panel_size.update(|size| {
+                                    size.bottom = new_size;
+                                })
+                            }
+                        }
+                        PanelContainerPosition::Right => {
+                            let new_size =
+                                current_size.width - (pos.x - drag_start_point.x);
+                            let current_panel_size = panel_size.get_untracked();
+                            let new_size = new_size
+                                .max(150.0)
+                                .min(available_size.width - 150.0 - 150.0);
+                            if new_size != current_panel_size.right {
+                                panel_size.update(|size| {
+                                    size.right = new_size;
+                                    size.left = size
+                                        .left
+                                        .min(available_size.width - new_size - 150.0)
+                                })
+                            }
+                        }
+                    }
+                })
+            };
             view.on_event_stop(EventListener::PointerDown, move |event| {
                 view_id.request_active();
                 if let Event::PointerDown(pointer_event) = event {
                     drag_start.set(Some(pointer_event.pos));
                 }
             })
-            .on_event_stop(EventListener::PointerMove, move |event| {
-                if let Event::PointerMove(pointer_event) = event {
-                    if let Some(drag_start_point) = drag_start.get_untracked() {
-                        let current_size = current_size.get_untracked();
-                        let available_size = available_size.get_untracked();
-                        match position {
-                            PanelContainerPosition::Left => {
-                                let new_size = current_size.width
-                                    + pointer_event.pos.x
-                                    - drag_start_point.x;
-                                let current_panel_size = panel_size.get_untracked();
-                                let new_size = new_size
-                                    .max(150.0)
-                                    .min(available_size.width - 150.0 - 150.0);
-                                if new_size != current_panel_size.left {
-                                    panel_size.update(|size| {
-                                        size.left = new_size;
-                                        size.right = size.right.min(
-                                            available_size.width - new_size - 150.0,
-                                        )
-                                    })
-                                }
-                            }
-                            PanelContainerPosition::Bottom => {
-                                let new_size = current_size.height
-                                    - (pointer_event.pos.y - drag_start_point.y);
-                                let maximized = panel.panel_bottom_maximized(false);
-                                if (maximized
-                                    && new_size < available_size.height - 50.0)
-                                    || (!maximized
-                                        && new_size > available_size.height - 50.0)
-                                {
-                                    panel.toggle_bottom_maximize();
-                                }
-
-                                let new_size = new_size
-                                    .max(100.0)
-                                    .min(available_size.height - 100.0);
-                                let current_size =
-                                    panel_size.with_untracked(|s| s.bottom);
-                                if current_size != new_size {
-                                    panel_size.update(|size| {
-                                        size.bottom = new_size;
-                                    })
-                                }
-                            }
-                            PanelContainerPosition::Right => {
-                                let new_size = current_size.width
-                                    - (pointer_event.pos.x - drag_start_point.x);
-                                let current_panel_size = panel_size.get_untracked();
-                                let new_size = new_size
-                                    .max(150.0)
-                                    .min(available_size.width - 150.0 - 150.0);
-                                if new_size != current_panel_size.right {
-                                    panel_size.update(|size| {
-                                        size.right = new_size;
-                                        size.left = size.left.min(
-                                            available_size.width - new_size - 150.0,
-                                        )
-                                    })
-                                }
-                            }
-                        }
+            .on_event_stop(EventListener::PointerMove, {
+                let (pending_pos, timer_set, apply_drag) =
+                    (pending_pos.clone(), timer_set.clone(), apply_drag.clone());
+                move |event| {
+                    let Event::PointerMove(pointer_event) = event else {
+                        return;
+                    };
+                    if drag_start.get_untracked().is_none() {
+                        return;
                     }
+                    pending_pos.set(Some(pointer_event.pos));
+                    if timer_set.replace(true) {
+                        return;
+                    }
+                    let (timer_set, apply_drag) =
+                        (timer_set.clone(), apply_drag.clone());
+                    exec_after(RESIZE_APPLY_INTERVAL, move |_| {
+                        timer_set.set(false);
+                        apply_drag();
+                    });
                 }
             })
             .on_event_stop(EventListener::PointerUp, move |_| {
+                // Apply the last position before the drag ends.
+                apply_drag();
                 drag_start.set(None);
             })
             .style(move |s| {

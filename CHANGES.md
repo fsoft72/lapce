@@ -1,8 +1,9 @@
 # Changes
 
-## Agent panel resize
+## Panel resize
 
-- Dragging the border of the right sidebar with the agent panel open is meant to be less jerky: the transcript no longer scrolls to the end (and forces an extra layout pass) when only its width changed, and the prompt box sets its wrap width only when it really changed. Not yet confirmed on a real drag: if it still stutters, profile the layout cost per frame.
+- Dragging the border of a sidebar or of the bottom panel is throttled: `PointerMove` only stores the last position and the resize is applied at most once every 16 ms (`RESIZE_APPLY_INTERVAL` in `panel/view.rs`), and the last position is applied on `PointerUp`. floem runs a full style and layout pass after every pointer event, so a mouse reporting hundreds of events per second forced hundreds of layouts per second. With a synthetic burst of 100 one-pixel moves the app took about 0.40 s to catch up before and about 0.06 s after (measured in a nested Xephyr; not measured on a real mouse and GPU).
+- The agent transcript no longer scrolls to the end when only its width changed, and the prompt box sets its wrap width only when it really changed. These two were an earlier guess that did not remove the stutter on its own.
 
 ## Rebrand to GoldenIDE
 
