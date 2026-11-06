@@ -17,6 +17,7 @@ use floem::{
 use super::editor_tab::editor_tab;
 use crate::{
     config::{GoldenIdeConfig, color::GoldenIdeColor},
+    drag_resize::{DragThrottle, window_pos},
     editor_tab::EditorTabData,
     id::{EditorTabId, SplitId},
     main_split::{SplitContent, SplitData, SplitDirection},
@@ -91,79 +92,81 @@ fn split_resize_border(
         },
         |(index, (_, content))| (*index, content.id()),
         move |(index, (_, content))| {
-            let drag_start: RwSignal<Option<Point>> = create_rw_signal(None);
             let view = empty();
             let view_id = view.id();
+            // Window coordinate (along the split axis) and extent of every
+            // child measured when the drag started. The new sizes are computed
+            // against them, never against the handle-local pointer position,
+            // which changes every time the handle moves.
+            let drag_start: RwSignal<Option<(f64, Vec<f64>)>> =
+                create_rw_signal(None);
+            let throttle = DragThrottle::new(move |pos: Point| {
+                let Some((start_pos, start_sizes)) = drag_start.get_untracked()
+                else {
+                    return;
+                };
+                let pos = match direction(false) {
+                    SplitDirection::Vertical => pos.x,
+                    SplitDirection::Horizontal => pos.y,
+                };
+                let shift = pos - start_pos;
+                let total: f64 = start_sizes.iter().sum();
+                if total <= 0.0 {
+                    return;
+                }
+                split.with_untracked(|split| {
+                    for (i, (size, _)) in split.children.iter().enumerate() {
+                        let extent = start_sizes.get(i).copied().unwrap_or_default();
+                        let extent = if i == index - 1 {
+                            extent + shift
+                        } else if i == index {
+                            extent - shift
+                        } else {
+                            extent
+                        };
+                        size.set(extent / total);
+                    }
+                })
+            });
             view.on_event_stop(EventListener::PointerDown, move |event| {
                 view_id.request_active();
                 if let Event::PointerDown(pointer_event) = event {
-                    drag_start.set(Some(pointer_event.pos));
+                    let pos = window_pos(view_id, pointer_event.pos);
+                    let vertical = direction(false) == SplitDirection::Vertical;
+                    let sizes = split.with_untracked(|split| {
+                        split
+                            .children
+                            .iter()
+                            .map(|(_, c)| {
+                                let rect = content_rect(c, false);
+                                if vertical {
+                                    rect.width()
+                                } else {
+                                    rect.height()
+                                }
+                            })
+                            .collect::<Vec<f64>>()
+                    });
+                    drag_start
+                        .set(Some((if vertical { pos.x } else { pos.y }, sizes)));
                 }
             })
-            .on_event_stop(EventListener::PointerUp, move |_| {
-                drag_start.set(None);
+            .on_event_stop(EventListener::PointerUp, {
+                let throttle = throttle.clone();
+                move |_| {
+                    // Apply the last position before the drag ends.
+                    throttle.flush();
+                    drag_start.set(None);
+                }
             })
             .on_event_stop(EventListener::PointerMove, move |event| {
-                if let Event::PointerMove(pointer_event) = event {
-                    if let Some(drag_start_point) = drag_start.get_untracked() {
-                        let rects = split.with_untracked(|split| {
-                            split
-                                .children
-                                .iter()
-                                .map(|(_, c)| content_rect(c, false))
-                                .collect::<Vec<Rect>>()
-                        });
-                        let direction = direction(false);
-                        match direction {
-                            SplitDirection::Vertical => {
-                                let left = rects[index - 1].width();
-                                let right = rects[index].width();
-                                let shift = pointer_event.pos.x - drag_start_point.x;
-                                let left = left + shift;
-                                let right = right - shift;
-                                let total_width =
-                                    rects.iter().map(|r| r.width()).sum::<f64>();
-                                split.with_untracked(|split| {
-                                    for (i, (size, _)) in
-                                        split.children.iter().enumerate()
-                                    {
-                                        if i == index - 1 {
-                                            size.set(left / total_width);
-                                        } else if i == index {
-                                            size.set(right / total_width);
-                                        } else {
-                                            size.set(rects[i].width() / total_width);
-                                        }
-                                    }
-                                })
-                            }
-                            SplitDirection::Horizontal => {
-                                let up = rects[index - 1].height();
-                                let down = rects[index].height();
-                                let shift = pointer_event.pos.y - drag_start_point.y;
-                                let up = up + shift;
-                                let down = down - shift;
-                                let total_height =
-                                    rects.iter().map(|r| r.height()).sum::<f64>();
-                                split.with_untracked(|split| {
-                                    for (i, (size, _)) in
-                                        split.children.iter().enumerate()
-                                    {
-                                        if i == index - 1 {
-                                            size.set(up / total_height);
-                                        } else if i == index {
-                                            size.set(down / total_height);
-                                        } else {
-                                            size.set(
-                                                rects[i].height() / total_height,
-                                            );
-                                        }
-                                    }
-                                })
-                            }
-                        }
-                    }
+                let Event::PointerMove(pointer_event) = event else {
+                    return;
+                };
+                if drag_start.with_untracked(|d| d.is_none()) {
+                    return;
                 }
+                throttle.push(window_pos(view_id, pointer_event.pos));
             })
             .style(move |s| {
                 let rect = content_rect(&content, true);

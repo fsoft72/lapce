@@ -1,8 +1,7 @@
-use std::{cell::Cell, rc::Rc, sync::Arc, time::Duration};
+use std::{rc::Rc, sync::Arc};
 
 use floem::{
     AnyView, IntoView, View,
-    action::exec_after,
     event::{Event, EventListener, EventPropagation},
     kurbo::{Point, Size},
     reactive::{
@@ -30,6 +29,7 @@ use super::{
 use crate::{
     app::{clickable_icon, clickable_icon_base},
     config::{GoldenIdeConfig, color::GoldenIdeColor, icon::GoldenIdeIcons},
+    drag_resize::{DragThrottle, dragged_size, window_pos},
     file_explorer::view::file_explorer_panel,
     panel::{
         call_hierarchy_view::show_hierarchy_panel, document_symbol::symbol_panel,
@@ -237,10 +237,6 @@ impl PanelBuilder {
     }
 }
 
-/// Minimum time between two applications of a panel resize while the border
-/// is dragged: about one frame at 60 Hz.
-const RESIZE_APPLY_INTERVAL: Duration = Duration::from_millis(16);
-
 /// Builds the container of the panels at `position`.
 pub fn panel_container_view(
     window_tab_data: Rc<WindowTabData>,
@@ -307,91 +303,80 @@ pub fn panel_container_view(
             panel.panel_info();
             let view = empty();
             let view_id = view.id();
-            let drag_start: RwSignal<Option<Point>> = create_rw_signal(None);
-            // Moves arrive faster than frames (a mouse reports hundreds of
-            // events per second) and floem runs a full style and layout pass
-            // after each one, so the resize is applied at most once per
-            // RESIZE_APPLY_INTERVAL, with the last position received.
-            let pending_pos: Rc<Cell<Option<Point>>> = Rc::new(Cell::new(None));
-            let timer_set = Rc::new(Cell::new(false));
-            let apply_drag: Rc<dyn Fn()> = {
-                let pending_pos = pending_pos.clone();
-                Rc::new(move || {
-                    let Some(pos) = pending_pos.take() else {
-                        return;
-                    };
-                    let Some(drag_start_point) = drag_start.get_untracked() else {
-                        return;
-                    };
-                    let current_size = current_size.get_untracked();
-                    let available_size = available_size.get_untracked();
-                    match position {
-                        PanelContainerPosition::Left => {
-                            let new_size =
-                                current_size.width + pos.x - drag_start_point.x;
-                            let current_panel_size = panel_size.get_untracked();
-                            let new_size = new_size
+            // Window coordinate (along the resize axis) and size of the
+            // container measured when the drag started. The new size is
+            // computed against them, never against the handle-local pointer
+            // position, which changes every time the handle moves.
+            let drag_start: RwSignal<Option<(f64, f64)>> = create_rw_signal(None);
+            let throttle = DragThrottle::new(move |pos: Point| {
+                let Some((start_pos, start_size)) = drag_start.get_untracked()
+                else {
+                    return;
+                };
+                let available_size = available_size.get_untracked();
+                match position {
+                    PanelContainerPosition::Left => {
+                        let new_size =
+                            dragged_size(start_size, start_pos, pos.x, true)
                                 .max(150.0)
                                 .min(available_size.width - 150.0 - 150.0);
-                            if new_size != current_panel_size.left {
-                                panel_size.update(|size| {
-                                    size.left = new_size;
-                                    size.right = size
-                                        .right
-                                        .min(available_size.width - new_size - 150.0)
-                                })
-                            }
-                        }
-                        PanelContainerPosition::Bottom => {
-                            let new_size =
-                                current_size.height - (pos.y - drag_start_point.y);
-                            let maximized = panel.panel_bottom_maximized(false);
-                            if (maximized && new_size < available_size.height - 50.0)
-                                || (!maximized
-                                    && new_size > available_size.height - 50.0)
-                            {
-                                panel.toggle_bottom_maximize();
-                            }
-
-                            let new_size = new_size
-                                .max(100.0)
-                                .min(available_size.height - 100.0);
-                            let current_size =
-                                panel_size.with_untracked(|s| s.bottom);
-                            if current_size != new_size {
-                                panel_size.update(|size| {
-                                    size.bottom = new_size;
-                                })
-                            }
-                        }
-                        PanelContainerPosition::Right => {
-                            let new_size =
-                                current_size.width - (pos.x - drag_start_point.x);
-                            let current_panel_size = panel_size.get_untracked();
-                            let new_size = new_size
-                                .max(150.0)
-                                .min(available_size.width - 150.0 - 150.0);
-                            if new_size != current_panel_size.right {
-                                panel_size.update(|size| {
-                                    size.right = new_size;
-                                    size.left = size
-                                        .left
-                                        .min(available_size.width - new_size - 150.0)
-                                })
-                            }
+                        if new_size != panel_size.get_untracked().left {
+                            panel_size.update(|size| {
+                                size.left = new_size;
+                                size.right = size
+                                    .right
+                                    .min(available_size.width - new_size - 150.0)
+                            })
                         }
                     }
-                })
-            };
+                    PanelContainerPosition::Bottom => {
+                        let new_size =
+                            dragged_size(start_size, start_pos, pos.y, false);
+                        let maximized = panel.panel_bottom_maximized(false);
+                        if (maximized && new_size < available_size.height - 50.0)
+                            || (!maximized
+                                && new_size > available_size.height - 50.0)
+                        {
+                            panel.toggle_bottom_maximize();
+                        }
+
+                        let new_size =
+                            new_size.max(100.0).min(available_size.height - 100.0);
+                        if panel_size.with_untracked(|s| s.bottom) != new_size {
+                            panel_size.update(|size| {
+                                size.bottom = new_size;
+                            })
+                        }
+                    }
+                    PanelContainerPosition::Right => {
+                        let new_size =
+                            dragged_size(start_size, start_pos, pos.x, false)
+                                .max(150.0)
+                                .min(available_size.width - 150.0 - 150.0);
+                        if new_size != panel_size.get_untracked().right {
+                            panel_size.update(|size| {
+                                size.right = new_size;
+                                size.left = size
+                                    .left
+                                    .min(available_size.width - new_size - 150.0)
+                            })
+                        }
+                    }
+                }
+            });
             view.on_event_stop(EventListener::PointerDown, move |event| {
                 view_id.request_active();
                 if let Event::PointerDown(pointer_event) = event {
-                    drag_start.set(Some(pointer_event.pos));
+                    let pos = window_pos(view_id, pointer_event.pos);
+                    let container = current_size.get_untracked();
+                    drag_start.set(Some(match position {
+                        PanelContainerPosition::Bottom => (pos.y, container.height),
+                        _ => (pos.x, container.width),
+                    }));
                 }
             })
             .on_event_stop(EventListener::PointerMove, {
-                let (pending_pos, timer_set, apply_drag) =
-                    (pending_pos.clone(), timer_set.clone(), apply_drag.clone());
+                let throttle = throttle.clone();
                 move |event| {
                     let Event::PointerMove(pointer_event) = event else {
                         return;
@@ -399,21 +384,12 @@ pub fn panel_container_view(
                     if drag_start.get_untracked().is_none() {
                         return;
                     }
-                    pending_pos.set(Some(pointer_event.pos));
-                    if timer_set.replace(true) {
-                        return;
-                    }
-                    let (timer_set, apply_drag) =
-                        (timer_set.clone(), apply_drag.clone());
-                    exec_after(RESIZE_APPLY_INTERVAL, move |_| {
-                        timer_set.set(false);
-                        apply_drag();
-                    });
+                    throttle.push(window_pos(view_id, pointer_event.pos));
                 }
             })
             .on_event_stop(EventListener::PointerUp, move |_| {
                 // Apply the last position before the drag ends.
-                apply_drag();
+                throttle.flush();
                 drag_start.set(None);
             })
             .style(move |s| {

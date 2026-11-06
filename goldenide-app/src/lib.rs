@@ -13,6 +13,7 @@ pub mod db;
 pub mod debug;
 pub mod desktop_notification;
 pub mod doc;
+pub mod drag_resize;
 pub mod editor;
 pub mod editor_tab;
 pub mod file_explorer;
